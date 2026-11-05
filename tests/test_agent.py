@@ -169,7 +169,7 @@ class AgentEndToEnd(unittest.TestCase):
         daily = (self.cfg.reports_dir / "2026-11-05_daily-brief.md").read_text()
         self.assertIn("Test headline", daily)
         self.assertIn("rules: SELL", daily)                                         # AI override cannot hide a rule call
-        self.assertIn("Test override", daily)
+        self.assertIn("test override", daily)
         self.assertNotIn("Distance to the 9-month stop", daily)                     # no repeated issue detail
         self.assertNotIn("INVENTED", daily)                                         # unknown key dropped
         bi = (self.cfg.reports_dir / "2026-22_newsletter-report.md").read_text()

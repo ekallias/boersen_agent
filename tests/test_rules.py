@@ -111,9 +111,34 @@ class QuoteFallbackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             st = Store(Path(d) / "a.db")
             st.save_prices("down:ABC", [("2026-11-03", 10.0), ("2026-11-04", 11.0)], "2026-11-05")
-            m = Market(st, Down(), today=date(2026, 11, 5))
+            m = Market(st, Down(), today=date(2026, 11, 5), live=True)
             q = m.quote("ABC")
             self.assertEqual((q.price, q.previous_close), (11.0, 10.0))
             self.assertIn("used last close of 2026-11-04", m.errors[0])
             self.assertIsNone(m.quote("XYZ"))
+            st.close()
+
+    def test_default_quote_is_the_cached_close_without_a_live_request(self):
+        import tempfile
+        from pathlib import Path
+
+        from boersen_agent.marketdata import DataError, Market, Provider
+        from boersen_agent.store import Store
+
+        class Counting(Provider):
+            name = "count"
+            calls = 0
+
+            def quote(self, symbol):
+                type(self).calls += 1
+                raise DataError("must not be called")
+
+        with tempfile.TemporaryDirectory() as d:
+            st = Store(Path(d) / "a.db")
+            st.save_prices("count:ABC", [("2026-11-03", 10.0), ("2026-11-04", 11.0)], "2026-11-05")
+            m = Market(st, Counting(), today=date(2026, 11, 5))
+            q = m.quote("ABC")
+            self.assertEqual((q.price, q.previous_close), (11.0, 10.0))
+            # the price comes from the cache; at most one provider call, to learn the currency
+            self.assertLessEqual(Counting.calls, 1)
             st.close()

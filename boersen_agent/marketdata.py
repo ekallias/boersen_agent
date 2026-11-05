@@ -226,7 +226,8 @@ def make_provider(cfg) -> Provider:
 def fred(series_id: str, start: date) -> Series:
     url = "https://fred.stlouisfed.org/graph/fredgraph.csv?" + parse.urlencode(
         {"id": series_id, "cosd": start.isoformat()})
-    rows = csv.reader(io.StringIO(http_get(url).decode()))
+    # FRED stalls on the agent's own User-Agent (measured: timeout), but answers the default urllib client
+    rows = csv.reader(io.StringIO(http_get(url, headers={"User-Agent": "Python-urllib"}).decode()))
     next(rows, None)
     return [(r[0], float(r[1])) for r in rows if len(r) == 2 and r[1] not in ("", ".")]
 
@@ -267,9 +268,13 @@ class Market:
     """Cached access to price histories, quotes and rates. Errors are collected, not raised, so one
     missing symbol never stops a report."""
 
-    def __init__(self, store, provider: Provider, history_years: int = 3, today: date | None = None):
+    def __init__(self, store, provider: Provider, history_years: int = 3, today: date | None = None,
+                 live: bool = False, refresh: bool = False):
         self.store, self.provider = store, provider
         self.today = today or date.today()
+        # live: use the provider's live quote (default: the last cached daily close, so the morning reports
+        # match the previous close). refresh: download again even if this series was already tried today.
+        self.live, self.refresh = live, refresh
         self.start = self.today - timedelta(days=365 * history_years + 30)
         self.errors: list[str] = []
         self._quotes: dict[str, Quote | None] = {}
@@ -285,14 +290,16 @@ class Market:
         return self._allocations[symbol]
 
     def _refresh(self, series: str, fetch) -> None:
-        if self.store.fetched_on(series) == self.today.isoformat():
-            return
+        if not self.refresh and self.store.fetched_on(series) == self.today.isoformat():
+            return  # already tried today (successfully or not)
         have = self.store.prices(series)
         start = self.start if not have else date.fromisoformat(have[-1][0]) - timedelta(days=10)
         try:
             pts = fetch(start)
         except DataError as e:
             self.errors.append(str(e))
+            # remember the failure for today, so the next run does not wait for the same timeout again
+            self.store.save_prices(series, [], self.today.isoformat())
             return
         self.store.save_prices(series, pts, self.today.isoformat())
 
@@ -308,6 +315,23 @@ class Market:
     def quote(self, symbol: str) -> Quote | None:
         """Live quote; if the provider fails (e.g. rate limit), the last cached daily close is used
         instead and the fallback is noted."""
+        if symbol not in self._quotes and not self.live:
+            h = self.history(symbol)  # fills the daily cache if needed
+            if h:
+                key = f"{self.provider.name}:{symbol}"
+                currency = self.store.quote_currency(key)
+                if currency is None:  # the currency is needed to convert the price; ask once and keep it
+                    try:
+                        currency = self.provider.quote(symbol).currency or ""
+                    except DataError as e:
+                        self.errors.append(f"currency unknown for {symbol}: {e}")  # not saved: retried next run
+                        currency = None
+                    else:
+                        self.store.save_quote_currency(key, currency)
+                prev = h[-2][1] if len(h) > 1 else None
+                self._quotes[symbol] = Quote(symbol, h[-1][1], h[-1][0] + "T00:00:00+00:00", prev, currency)
+            else:
+                self._quotes[symbol] = None
         if symbol not in self._quotes:
             try:
                 self._quotes[symbol] = self.provider.quote(symbol)

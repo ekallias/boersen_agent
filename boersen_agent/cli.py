@@ -18,7 +18,8 @@ from .store import Store
 def build(args):
     cfg = C.load(args.config)
     store = Store(cfg.db_path)
-    market = Market(store, make_provider(cfg), cfg.history_years)
+    market = Market(store, make_provider(cfg), cfg.history_years,
+                    live=getattr(args, "live", False), refresh=getattr(args, "refresh", False))
     pl = None
     if cfg.paperless_url and cfg.paperless_token:
         pl = PaperlessClient(cfg.paperless_url, cfg.paperless_token)
@@ -27,6 +28,8 @@ def build(args):
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="boersen_agent", description=__doc__)
+    ap.add_argument("--live", action="store_true", help="use live quotes instead of the last daily close")
+    ap.add_argument("--refresh", action="store_true", help="download market data again even if already tried today")
     ap.add_argument("--config", default="config.toml" if Path("config.toml").exists() else None,
                     help="config file (default: ./config.toml if present)")
     sub = ap.add_subparsers(dest="cmd", required=True)

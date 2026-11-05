@@ -101,6 +101,20 @@ SCHEMA = {
         "risks": {"type": "array", "items": {"type": "string"}},
         "questions_for_user": {"type": "array", "items": {"type": "string"}},
         "notes_for_next_run": {"type": "string"},
+        "market_news": {
+            "type": "array",
+            "description": "the 3-5 most important market news items for today's market, with what to watch for",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "headline": {"type": "string"},
+                    "why_it_matters": {"type": "string", "description": "for this portfolio, one sentence"},
+                    "watch_for": {"type": "string", "description": "a concrete level, event or time to watch"},
+                },
+                "required": ["headline", "why_it_matters", "watch_for"],
+                "additionalProperties": False,
+            },
+        },
     },
     "required": ["headline", "summary", "market_view", "position_calls", "newsletter_picks", "new_ideas",
                  "risks", "questions_for_user", "notes_for_next_run"],

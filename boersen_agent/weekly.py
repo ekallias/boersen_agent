@@ -9,8 +9,9 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
-from .brief import write_pdf
-from .i18n import _, date_long, date_short, num, reason
+from . import svgcharts
+from .brief import sparkline, write_pdf
+from .i18n import _, action, date_long, date_short, num, reason
 from .names import nice_name
 
 PAPER, INK, MUTED, RULE, TRACK = "#F6F4EE", "#14171C", "#5B616B", "#CFCABB", "#E4E0D5"
@@ -26,7 +27,7 @@ TAG = {
     "HOLD": ("#E8E4DA", "#4A4F57"),
 }
 VERDICT_COLOUR = {"confirmed": GREEN, "questionable": AMBER, "contradicted": RED}
-REC_TAG = {"K": ("BUY", GREEN), "V": ("SELL", RED), "H": ("HOLD", MUTED)}
+REC_TAG = {"K": ("BUY", GREEN), "V": ("SELL", RED), "H": ("HOLD", MUTED)}  # code -> (action code, colour)
 SIGN = {1: ("+", GREEN), -1: ("–", RED), 0: ("·", MUTED), None: ("?", MUTED)}
 CHANGE_TAG = {"NEW": GREEN, "CALL": NAVY, "STOP": MUTED}
 
@@ -35,12 +36,12 @@ def esc(v) -> str:
     return html.escape("" if v is None else str(v), quote=True)
 
 
-def _tag(action: str | None, conf: int | None = None) -> str:
-    if not action:
+def _tag(code: str | None, conf: int | None = None) -> str:
+    if not code:
         return "–"
-    bg, fg = TAG.get(action.upper(), ("#E8E4DA", INK))
+    bg, fg = TAG.get(code.upper(), ("#E8E4DA", INK))
     suffix = f" <span class='conf'>{conf}</span>" if conf is not None else ""
-    return f"<span class='tag' style='background:{bg};color:{fg}'>{esc(action.upper())}</span>{suffix}"
+    return f"<span class='tag' style='background:{bg};color:{fg}'>{esc(action(code).upper())}</span>{suffix}"
 
 
 def _pct(v, nd=1) -> str:
@@ -122,8 +123,12 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
     # --- lead and market news
     if d:
         page1.append(f"<div class='lead'>{esc(d['headline'])}</div><p class='body'>{esc(d['summary'])}</p>")
+        summary = d.get("newsletter_summary") or []
+        if summary:
+            page1.append(_h2(_("Newsletter summary")) + "<ul class='summary'>" + "".join(
+                f"<li>{esc(item)}</li>" for item in summary) + "</ul>")
         mv = d["market_view"]
-        page1.append(f"<div class='view'><b>{esc(_('Market view:'))}</b> {esc(mv['stance'])} "
+        page1.append(f"<div class='view'><b>{esc(_('Market view:'))}</b> {esc(_(mv['stance'].replace('_', '-')))} "
                      f"({esc(_('confidence'))} {mv['confidence']}) — {esc(mv['reasoning'])}</div>")
         if d.get("market_news"):
             items = "".join(f"<div class='news'><div class='nt'>{esc(n['headline'])}</div>"
@@ -153,7 +158,8 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
     rows = []
     for s in sorted(picks, key=lambda x: (x.newsletter_rec != "V", x.name)):
         c = calls.get(s.key)
-        rec, rc = REC_TAG.get(s.newsletter_rec, ("–", MUTED))
+        rec_code, rc = REC_TAG.get(s.newsletter_rec, (None, MUTED))
+        rec = action(rec_code) if rec_code else "–"
         verdict = (c or {}).get("verdict")
         vcol = VERDICT_COLOUR.get(verdict, MUTED)
         check = _("AI {verdict}").format(verdict=_(verdict)) if verdict else _(s.verification or "")
@@ -203,19 +209,21 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
     p3 = _page(ideas_block + rq + changes_block)
 
     # --- charts
-    stock_figs = figs.get("stock_charts") or []
+    stock_series = figs.get("stock_series") or []
     chart_parts = [_h2(_("Charts"))]
-    chart_parts.append(_img(figs.get("gesamt_history"), _("Gesamtsystem per issue")))
+    chart_parts.append(_svg_figure(svgcharts.votes_svg(figs.get("gesamt_rows") or []), _("Gesamtsystem per issue")))
     zins = figs.get("zins_history")
-    chart_parts.append(_img(zins, _("Zinsstruktur: printed in the newsletter vs. computed"),
-                            "The rule only uses the sign (warning below 0); the computed series runs about 0.1 higher."))
-    chart_parts.append(_img(figs.get("rs_kuv"), _("Stock list: relative strength vs. KUV"),
-                            "Buy candidates sit right of the top-200 line and below the KUV line."))
-    chart_parts.append(_img(figs.get("allocation"), _("Your allocation")))
+    chart_parts.append(_svg_figure(svgcharts.zins_svg(figs.get("zins_rows") or []),
+                                   _("Zinsstruktur: printed in the newsletter vs. computed"),
+                                   _("The rule only uses the sign (warning below 0); the computed series runs about 0.1 higher.")))
+    sc = figs.get("scatter")
+    chart_parts.append(_svg_figure(svgcharts.scatter_svg(**sc) if sc else "", _("Stock list: relative strength vs. KUV"),
+                                   _("Buy candidates sit right of the top-200 line and below the KUV line.")))
+    chart_parts.append(_alloc_bars(ctx))
     p4 = _page("".join(chart_parts))
     p5 = _page(_h2(_("Price charts: stocks labelled SELL, REDUCE, REVIEW or BUY"))
                + "<p class='note'>" + esc(_("Weekly closes over the last year. The dashed line is the rolling 9-month stop (39 weeks).")) + "</p>"
-               + "".join(_img(p) for p in stock_figs))
+               + _price_cards(stock_series))
 
     # --- regime and portfolio
     reg_rows = []
@@ -273,6 +281,47 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
     return path
 
 
+ACTION_COLOUR = {"SELL": RED, "REDUCE": RED, "REVIEW": AMBER, "WATCH": NAVY, "BUY": GREEN, "ADD": GREEN,
+                 "HOLD": MUTED}
+
+
+def _svg_figure(svg: str, caption: str, note: str | None = None) -> str:
+    if not svg:
+        return ""
+    nt = f"<p class='note'>{esc(note)}</p>" if note else ""
+    return f"<div class='figure'><h3>{esc(caption)}</h3>{nt}{svg}</div>"
+
+
+def _price_cards(series: list[dict]) -> str:
+    """Price cards in the daily brief's style: weekly closes, dashed 9-month stop, live price ring."""
+    if not series:
+        return ""
+    cards = []
+    for s in series:
+        colour = ACTION_COLOUR.get((s.get("action") or "").upper(), NAVY)
+        svg = sparkline(s["closes"], s["stops"], s.get("today"), colour=colour, w=330, h=120, pad=7, label=s["name"])
+        cards.append(f"<div class='pcard'><div class='ph'><span class='pn'>{esc(s['name'])}</span>"
+                     f"{_tag(s.get('action'))}</div>{svg}<div class='pc'>{esc(s.get('caption') or '')}</div></div>")
+    return "<div class='pgrid'>" + "".join(cards) + "</div>"
+
+
+def _alloc_bars(ctx) -> str:
+    """Holdings by value, as horizontal bars in the daily brief's style."""
+    rows = sorted([r for r in ctx.portfolio["rows"] if r.get("value_eur")], key=lambda r: -r["value_eur"])
+    if not rows:
+        return ""
+    top = rows[0]["value_eur"]
+    colour = {"stock": NAVY, "fund": "#2F7A6E", "bond": "#8A8F98"}
+    out = []
+    for r in rows:
+        asset = "bond" if r.get("cash") else (r.get("asset") or "stock")
+        width = r["value_eur"] / top * 100
+        out.append(f"<div class='brow'><div class='bl'>{esc(nice_name(r['name']))}</div>"
+                   f"<div class='bb'><div style='width:{width:.1f}%;background:{colour.get(asset, NAVY)}'></div></div>"
+                   f"<div class='bv'>{num(r['value_eur'], 0)} €</div></div>")
+    return _h2(_("Your allocation")) + "<div class='bars'>" + "".join(out) + "</div>"
+
+
 def _document(title: str, body: str) -> str:
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>{esc(title)}</title>
@@ -315,8 +364,16 @@ tr {{ page-break-inside: avoid }}
 .two {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px }}
 ul {{ margin: 2px 0 6px; padding-left: 14px }} li {{ margin: 0 0 3px }}
 .chg {{ border-bottom: 1px solid {RULE}; padding: 3px 0; font-size: 9.5px }}
+.summary li {{ margin-bottom: 4px }}
 .ct {{ display: inline-block; width: 42px; font-size: 7.5px; font-weight: 600; letter-spacing: .08em }}
 .figure {{ margin: 6px 0 10px }} .figure img {{ width: 100%; height: auto }}
+.pgrid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px }}
+.pcard {{ border-bottom: 1px solid {RULE}; padding-bottom: 6px; break-inside: avoid }}
+.ph {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px }}
+.pn {{ font-weight: 600; font-size: 10px }} .pc {{ font-size: 8.5px; color: {MUTED} }}
+.bars {{ margin-top: 4px }} .brow {{ display: grid; grid-template-columns: 36% 1fr 20%; gap: 8px; align-items: center; margin: 5px 0; font-size: 9.5px }}
+.bb {{ height: 9px; background: {TRACK}; border-radius: 4px; overflow: hidden }} .bb div {{ height: 9px }}
+.bv {{ text-align: right; color: {MUTED} }}
 .appx {{ break-inside: avoid; margin-bottom: 7px; border-bottom: 1px solid {RULE}; padding-bottom: 4px }}
 .ah {{ margin-bottom: 2px }} .sym {{ color: {MUTED}; font-size: 8.5px; margin-left: 4px }}
 .appx ul {{ font-size: 8.5px }}

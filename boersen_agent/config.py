@@ -45,6 +45,16 @@ DEFAULT_SYMBOLS = {
 }
 
 DEFAULT_STRATEGY_TARGETS = {"high_risk": 10.0, "stocks": 40.0, "safe": 50.0}
+# The market strip at the top of the daily brief: label, data symbol, kind (index | usd | fx | yield).
+DEFAULT_MARKET_ITEMS = [
+    {"label": "S&P 500", "symbol": "^GSPC", "kind": "index"},
+    {"label": "DAX", "symbol": "^GDAXI", "kind": "index"},
+    {"label": "Nasdaq", "symbol": "^IXIC", "kind": "index"},
+    {"label": "Brent", "symbol": "BZ=F", "kind": "usd"},
+    {"label": "EUR/USD", "symbol": "EURUSD=X", "kind": "fx"},
+    {"label": "US 10J", "symbol": "^TNX", "kind": "yield"},
+]
+MARKET_KINDS = {"index", "usd", "fx", "yield"}
 
 
 @dataclass
@@ -74,6 +84,8 @@ class Config:
     report_language: str = "en"             # en | de: language of reports, charts and the AI's text
     strategy_targets: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_STRATEGY_TARGETS))
     high_risk_isins: list[str] = field(default_factory=list)
+    fund_allocations: dict[str, dict[str, float]] = field(default_factory=dict)  # ISIN -> stock/bond/cash/other shares
+    market_items: list[dict] = field(default_factory=lambda: [dict(i) for i in DEFAULT_MARKET_ITEMS])
 
     @property
     def db_path(self) -> Path:
@@ -81,6 +93,44 @@ class Config:
 
     def rule(self, key: str):
         return self.rules[key]
+
+
+def _market_items(raw) -> list[dict]:
+    """[[brief.market_items]] label / symbol / kind rows for the market strip; the defaults when absent."""
+    if raw is None:
+        return [dict(i) for i in DEFAULT_MARKET_ITEMS]
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("brief.market_items must be a list of tables with label, symbol and kind")
+    out = []
+    for row in raw:
+        missing = {"label", "symbol", "kind"} - set(row)
+        if missing:
+            raise ValueError(f"brief.market_items entry {row}: missing {sorted(missing)}")
+        if row["kind"] not in MARKET_KINDS:
+            raise ValueError(f"brief.market_items {row['label']}: kind must be one of {sorted(MARKET_KINDS)}")
+        out.append({"label": str(row["label"]), "symbol": str(row["symbol"]), "kind": str(row["kind"])})
+    return out
+
+
+FUND_PARTS = ("stock", "bond", "cash", "other")
+
+
+def _fund_allocations(raw: dict) -> dict[str, dict[str, float]]:
+    """[fund_allocations] ISIN = { stock = 0.44, bond = 0.53, cash = 0.0, other = 0.03 } (shares of the fund).
+    The four shares must add up to 1; an entry that does not is an error, not a guess."""
+    if not isinstance(raw, dict):
+        raise ValueError("fund_allocations must be a table keyed by ISIN")
+    out: dict[str, dict[str, float]] = {}
+    for isin, parts in raw.items():
+        unknown = set(parts) - set(FUND_PARTS)
+        if unknown:
+            raise ValueError(f"fund_allocations {isin}: unknown keys {sorted(unknown)}")
+        shares = {part: float(parts.get(part, 0.0)) for part in FUND_PARTS}
+        if any(v < 0 for v in shares.values()) or abs(sum(shares.values()) - 1.0) > 0.005:
+            raise ValueError(f"fund_allocations {isin}: the shares must be between 0 and 1 and add up to 1 "
+                             f"(now {sum(shares.values()):.2f})")
+        out[str(isin).upper()] = shares
+    return out
 
 
 def load(path: str | Path | None) -> Config:
@@ -126,6 +176,8 @@ def load(path: str | Path | None) -> Config:
     targets.update({key: float(value) for key, value in strategy.get("targets", {}).items()})
     if any(value < 0 for value in targets.values()) or abs(sum(targets.values()) - 100) > 0.01:
         raise ValueError("strategy.targets must be non-negative and add up to 100")
+    fund_allocations = _fund_allocations(raw.get("fund_allocations", {}))
+    market_items = _market_items(raw.get("brief", {}).get("market_items"))
     return Config(
         data_dir=rel(paths.get("data_dir", "data")),
         reports_dir=rel(paths.get("reports_dir", "reports")),
@@ -152,4 +204,6 @@ def load(path: str | Path | None) -> Config:
         report_language=str(raw.get("report", {}).get("language", "en")),
         strategy_targets=targets,
         high_risk_isins=[str(isin).upper() for isin in high_risk_isins],
+        fund_allocations=fund_allocations,
+        market_items=market_items,
     )

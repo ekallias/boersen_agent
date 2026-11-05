@@ -34,6 +34,15 @@ DE = {
     "no issue yet": "noch keine Ausgabe",
     "generated": "erstellt",
     "daily brief": "Tagesbrief",
+    "Portfolio snapshot": "Depotüberblick",
+    "Market context": "Marktkontext",
+    "Action items": "Handlungsbedarf",
+    "Newsletter context: {issue} ({date}); full issue analysis is in its biweekly report.":
+        "Newsletter-Kontext: {issue} ({date}); die ausführliche Analyse steht im Ausgabenbericht.",
+    "No newsletter ingested; market rules use live data only.":
+        "Keine Newsletter-Ausgabe eingelesen; die Marktregeln nutzen nur aktuelle Daten.",
+    "Gesamtsystem {score}; Sicherheitssystem {safety}; {season}.":
+        "Gesamtsystem {score}; Sicherheitssystem {safety}; {season}.",
     "issue report": "Ausgabenbericht",
     "page": "Seite",
     # tiles
@@ -43,6 +52,9 @@ DE = {
     "Equity share": "Aktienquote",
     "stocks + funds": "Aktien + Fonds",
     "Alerts": "Warnungen",
+    "Actions": "Aktionen",
+    "position actions": "Positionsaktionen",
+    "stocks + known fund exposure": "Aktien + bekannte Fondsaufteilung",
     "sell / reduce / watch": "verkaufen / reduzieren / beobachten",
     "positive": "positiv",
     "negative": "negativ",
@@ -101,8 +113,21 @@ DE = {
     "Risks": "Risiken",
     "Questions for you": "Fragen an Sie",
     "No portfolio imported yet.": "Noch kein Depot importiert.",
+    "No position actions flagged.": "Keine konkreten Maßnahmen für Positionen.",
+    "Detailed issue analysis": "Ausführliche Ausgabenanalyse",
+    "seasonal market context only": "nur saisonaler Marktkontext",
+    "Fund composition unavailable: ": "Fondsaufteilung nicht verfügbar: ",
+    "{count} more action(s) in the Markdown copy.": "{count} weitere Maßnahmen stehen in der Markdown-Datei.",
+    "Strategy allocation (actual / target)": "Strategieaufteilung (Ist / Ziel)",
+    "High risk": "Hohes Risiko",
+    "Safe": "Sicherheitsanteil",
+    "Unclassified": "Nicht zugeordnet",
+    "target": "Ziel",
+    "rule": "Regel",
+    "Known equity share": "Bekannte Aktienquote",
     # tables
     "Security": "Wertpapier", "AI call": "KI", "Rules": "Regeln", "Newsletter": "Newsletter",
+    "Action": "Aktion", "Why": "Warum", "Value": "Wert", "Positions": "Positionen",
     "Rationale": "Begründung", "Component": "Komponente", "Now": "Jetzt", "Issue": "Ausgabe",
     "Source": "Quelle", "Rule": "Regel", "Detail": "Detail", "Position": "Position", "Type": "Art",
     "Qty": "Stück", "Price": "Kurs", "Value €": "Wert €", "P/L": "G/V",
@@ -115,6 +140,10 @@ DE = {
     "Valued at cost: ": "Zum Einstand bewertet: ",
     "Equity share counts stocks and funds; cash and bonds are cash-like, as in the newsletter.":
         "Die Aktienquote zählt Aktien und Fonds; Cash und Anleihen gelten wie im Newsletter als Cash.",
+    "Fund equity exposure uses provider allocation data; unavailable fund mix remains unclassified.":
+        "Der Aktienanteil von Fonds stammt aus den Anlagedaten des Datenanbieters; unbekannte Anteile bleiben nicht zugeordnet.",
+    "Fund composition unavailable; its value is excluded from known equity exposure: ":
+        "Fondsaufteilung nicht verfügbar; der Wert wird aus der bekannten Aktienquote ausgeschlossen: ",
     "⚠ overrides the 9-month-low sell rule:": "⚠ weicht von der 9-Monats-Tief-Verkaufsregel ab:",
     "⚠ differs from the rule:": "⚠ weicht von der Regel ab:",
     "⚠ = live data differs from the last issue (markets moved since, or the rule is inferred: I/U).":

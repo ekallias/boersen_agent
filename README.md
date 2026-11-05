@@ -17,7 +17,9 @@ Klaus Haidorfer). **Scripts do the repeatable work, an AI analyst (Claude) does 
     all, the 9-month-low sell rule.
   - Without an API key, or if the call fails, you get the rule-based report with a banner.
 
-Outputs are **PDF reports with charts**: a daily brief, and a detailed report for each new issue.
+Outputs are a **one-page daily PDF brief** with immediate action items and a detailed report for each
+new issue. The biweekly report retains the market tables, charts and per-position rule detail that
+would otherwise repeat in every daily report.
 **It is decision support for your own account, not investment advice: it never trades, and
 confidence means strength of evidence, not a probability of gain.**
 
@@ -38,11 +40,9 @@ Deployment guides:
 |---|---|---|
 | Every run (daily) | Checks Paperless for new issues of the correspondent "Börsen Signale" | — |
 | New issue (every 2 weeks) | Parses the dashboard (p5), the Dispo-Liste (p8, with ISINs, K/H/V, 9-month stops) and the ~700-stock RS list (p9–15). Re-checks the market signals and picks with live data, screens for candidates; Claude reads the issue and the facts | `reports/<issue>_newsletter-report.pdf` |
-| Daily | Market regime, then every position: 9-month stop, quarter rule, RS rank, review rules; Claude's calls with confidence | `reports/<date>_daily-brief.pdf` |
+| Daily | One-page summary of portfolio actions, strategy drift and current market context | `reports/<date>_daily-brief.pdf` |
 
 Charts:
-- **Daily brief:** allocation, distance to the 9-month stop, price vs. stop per position, and
-  portfolio value over time.
 - **Issue report:** Gesamtsystem per issue, Zinsstruktur (newsletter vs. computed), the stock list
   as relative strength vs. KUV with your holdings and candidates marked, and allocation.
 
@@ -73,7 +73,7 @@ everything local; the reports are then rule-based only.
 
 ```bash
 apt install -y poppler-utils python3 python3-pip
-git clone https://github.com/ekallias/playground && cp -r playground/boersen-agent /opt/boersen-agent
+git clone https://github.com/ekallias/boersen_agent.git /opt/boersen-agent
 cd /opt/boersen-agent
 pip install -r requirements.txt
 cp config.example.toml config.toml
@@ -98,9 +98,22 @@ Two CSV layouts are accepted:
 
 Asset types are detected automatically:
 
-- **Funds and ETFs** (LU/IE ISINs or fund names) get the price rules only.
+- **Funds and ETFs** (LU/IE ISINs or fund names) get the price rules only. Their stock/bond/cash
+  exposure is fetched from EODHD ETF fundamentals when using `provider = "eodhd"` with a plan that
+  includes fund fundamentals ([API docs](https://eodhd.com/financial-apis/stock-etfs-fundamental-data-feeds),
+  [allocation field definitions](https://eodhd.com/financial-academy/financial-faq/fundamentals-glossary-etf/)).
+  Yahoo provides prices but not this asset-allocation breakdown. Missing fund composition is reported
+  as unclassified, never assumed to be stocks.
 - **Bonds** are valued in percent of nominal and counted as cash-like, as the newsletter does with its
   Bund position.
+
+### Investment strategy
+
+The editable `[strategy]` section in `config.toml` sets personal target allocations and high-risk
+ISINs. The example defaults to 10% high-risk / 40% stocks / 50% safe; change these values to match
+your own plan. Each report compares measured portfolio exposure with the targets. See
+[docs/INVESTMENT_STRATEGY.md](docs/INVESTMENT_STRATEGY.md) for definitions and limitations. These
+targets complement, but do not replace, the Börsensignale rules.
 
 ### Keep it in sync with your trades
 

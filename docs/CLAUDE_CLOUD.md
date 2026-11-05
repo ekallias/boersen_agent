@@ -7,7 +7,7 @@ toward your Claude plan's usage, not API billing.
 
 | Piece | Where it lives |
 |---|---|
-| Code | this repository (`ekallias/playground`, folder `boersen-agent/`) |
+| Code | this repository (`ekallias/boersen_agent`) |
 | State: portfolio, history, symbol map, Claude's notes, reports | a small **private** GitHub repository, e.g. `ekallias/boersen-agent-state` |
 | Newsletters (input) | your Paperless, reached at `https://paperless.kallias.net` |
 | Schedule, compute, analysis | a Claude Code cloud environment + scheduled task |
@@ -30,9 +30,7 @@ and Claude's notes. It has to survive between runs.
 
 ## 1. Prepare GitHub
 
-1. **Make the code available on the default branch.** Merge the `claude/great-knuth-8bh4a7` branch of
-   `ekallias/playground` (open a pull request and merge it). Otherwise, check the branch out in the
-   task prompt (step 4); the prompt below does that.
+1. **Make the code available on the default branch** of `ekallias/boersen_agent`.
 2. **Create a private repository** `ekallias/boersen-agent-state` with these files:
 
    `config.toml`
@@ -83,7 +81,7 @@ of London ones.
 Create a new environment in Claude Code on the web (the environment menu in the session's title
 bar), named for example **boersen-agent**:
 
-- **Repositories:** `ekallias/playground` and `ekallias/boersen-agent-state`.
+- **Repositories:** `ekallias/boersen_agent` and `ekallias/boersen-agent-state`.
 - **Network access:** *Limited*, with package managers allowed, and these allowed domains:
   ```
   paperless.kallias.net
@@ -107,7 +105,7 @@ bar), named for example **boersen-agent**:
 - **Setup script.** It runs on every fresh container:
   ```bash
   apt-get update -qq && apt-get install -y -qq poppler-utils
-  if [ -d playground/boersen-agent ]; then pip install -q -r playground/boersen-agent/requirements.txt; fi
+  if [ -d boersen_agent ]; then pip install -q -r boersen_agent/requirements.txt; fi
   ```
 
 The secrets stay in the environment, never in the repositories or the prompt.
@@ -119,12 +117,11 @@ environment. Set it to start a **new session on each run**, with **push notifica
 this prompt, which has to stand on its own:
 
 ```
-You run the daily Börsen-Agent job. Work in the cloned repositories playground/ and
+You run the daily Börsen-Agent job. Work in the cloned repositories boersen_agent/ and
 boersen-agent-state/.
 
-1. Setup: `cd playground && (git checkout claude/great-knuth-8bh4a7 2>/dev/null || true) && cd boersen-agent`
-   (the checkout is only needed while the code is not merged to main), then
-   `A="python -m boersen_agent --config ../../boersen-agent-state/config.toml"`.
+1. Setup: `cd boersen_agent`, then
+   `A="python -m boersen_agent --config ../boersen-agent-state/config.toml"`.
 2. Run `$A prepare`. It prints a manifest with tasks (an "issue" task only when a new
    newsletter arrived, always a "daily" task).
 3. For each task: read the manifest's prompt.md (your role and the newsletter's methods) and

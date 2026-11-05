@@ -28,7 +28,7 @@ n8n ──▶ Telegram / e-mail (PDF) ──▶ Open WebUI knowledge ──▶ P
 On the Docker host, next to the compose file of your stack:
 
 ```bash
-git clone https://github.com/ekallias/playground /tmp/pg && cp -r /tmp/pg/boersen-agent ./boersen-agent
+git clone https://github.com/ekallias/boersen_agent.git ./boersen-agent
 mkdir -p boersen-agent-data
 cp boersen-agent/config.example.toml boersen-agent-data/config.toml
 cp boersen-agent/deploy/boersen-agent.env.example boersen-agent.env && chmod 600 boersen-agent.env

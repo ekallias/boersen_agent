@@ -24,6 +24,7 @@ from reportlab.platypus import (HRFlowable, Image, KeepTogether, PageBreak, Para
 
 from .i18n import _, action, date_long, date_short, num, reason
 from .names import nice_name
+from .report import daily_action_items, strategy_lines
 
 _FONTS = os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
 pdfmetrics.registerFont(TTFont("DejaVu", os.path.join(_FONTS, "DejaVuSans.ttf")))
@@ -276,7 +277,10 @@ def portfolio_table(port) -> list:
         notes.append(_("No price for: ") + ", ".join(nice_name(n) for n in port["missing"]))
     if port.get("at_cost"):
         notes.append(_("Valued at cost: ") + ", ".join(nice_name(n) for n in port["at_cost"]))
-    notes.append(_("Equity share counts stocks and funds; cash and bonds are cash-like, as in the newsletter."))
+    notes.append(_("Fund equity exposure uses provider allocation data; unavailable fund mix remains unclassified."))
+    if port.get("unknown_allocation"):
+        notes.append(_("Fund composition unavailable: ") + ", ".join(nice_name(n) for n in port["unknown_allocation"]))
+    notes += strategy_lines(port)
     return out + [P(n, "small") for n in notes]
 
 

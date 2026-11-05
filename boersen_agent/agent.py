@@ -8,6 +8,8 @@ from pathlib import Path
 
 from . import brief, charts, pdfreport, report, weekly
 from . import rules as R
+from .i18n import _, num
+from .names import nice_name
 from .analyst import AnalystError, analyse, build_facts
 from .marketdata import DataError
 from .newsletter import Issue, issue_age_days, name_key, parse_pdf
@@ -143,7 +145,9 @@ class Agent:
             if h.asset != "fund":
                 continue
             symbol, _ = self._resolve_holding(h)
-            allocation = self.market.asset_allocation(symbol) if symbol else None
+            # the split from config.toml ([fund_allocations]) wins over the data provider
+            allocation = self.cfg.fund_allocations.get(h.key.upper()) or (
+                self.market.asset_allocation(symbol) if symbol else None)
             if allocation:
                 fund_allocations[h.key] = allocation
             else:
@@ -249,20 +253,57 @@ class Agent:
         go("value_history", charts.value_history, self.store.snapshots())
         if issue_scope:
             hist = [dict(r) for r in self.store.db.execute("SELECT issue_date, dashboard FROM issues ORDER BY issue_date")]
-            go("gesamt_history", charts.gesamt_history,
-               [{"date": h["issue_date"], "score": json.loads(h["dashboard"]).get("gesamt", {}).get("score")} for h in hist])
+            gesamt_rows = [{"date": h["issue_date"], "score": json.loads(h["dashboard"]).get("gesamt", {}).get("score")}
+                           for h in hist]
+            out["gesamt_rows"] = gesamt_rows  # raw data for the SVG charts in the report
+            go("gesamt_history", charts.gesamt_history, gesamt_rows)
             comp = zins_at_dates(self.market, self.cfg, [h["issue_date"] for h in hist])
-            go("zins_history", charts.zins_history,
-               [(h["issue_date"], json.loads(h["dashboard"]).get("zinsstruktur_value"), comp.get(h["issue_date"])) for h in hist])
+            zins_rows = [(h["issue_date"], json.loads(h["dashboard"]).get("zinsstruktur_value"), comp.get(h["issue_date"]))
+                         for h in hist]
+            out["zins_rows"] = zins_rows
+            go("zins_history", charts.zins_history, zins_rows)
             groups = {"newsletter buy (K)": [s.universe for s in ctx.suggestions if s.newsletter_rec == "K" and s.universe],
                       "your holdings": [s.universe for s in ctx.suggestions if s.in_portfolio and s.universe],
                       "new candidates": [s.universe for s in ctx.suggestions if s.newsletter_rec is None
                                          and not s.in_portfolio and s.universe]}
+            out["scatter"] = {"universe": ctx.issue_rows["universe"], "highlights": groups,
+                              "top_n": self.cfg.rule("rs_top_n"), "kuv_max": self.cfg.rule("kuv_normal_max")}
             go("rs_kuv", charts.rs_kuv, ctx.issue_rows["universe"], groups, self.cfg.rule("rs_top_n"),
                self.cfg.rule("kuv_normal_max"))
         return {k: v for k, v in out.items() if v}
 
     CHARTED_ACTIONS = ("SELL", "REDUCE", "REVIEW", "BUY")
+
+    def _stock_series(self, ctx, analysis) -> list[dict]:
+        """Weekly closes and rolling stop for every stock labelled SELL, REDUCE, REVIEW or BUY (AI call or rule)."""
+        calls = analysis.calls_by_key() if analysis else {}
+        order = {a: i for i, a in enumerate(self.CHARTED_ACTIONS)}
+        chosen = []
+        for s in ctx.suggestions:
+            ai_action = (calls.get(s.key) or {}).get("action")
+            if s.action in order or ai_action in order:
+                best = min([order[a] for a in (s.action, ai_action) if a in order])
+                chosen.append((best, s, ai_action or s.action))
+        out = []
+        for _rank, s, code in sorted(chosen, key=lambda t: (t[0], -t[1].confidence)):
+            if not s.symbol:
+                self.notes.append(f"no price chart for {s.name}: no market symbol")
+                continue
+            try:
+                full = [c for _d, c in R.weekly(self.market.daily_with_quote(s.symbol), self.now)[0]]
+            except Exception as e:  # noqa: BLE001 - one bad symbol must not stop the report
+                self.notes.append(f"no price chart for {s.name}: {e}")
+                continue
+            closes, stops = brief._series(full, self.cfg.rule("nine_month_weeks"))
+            if not closes:
+                continue
+            live = s.live or {}
+            price, stop = live.get("price"), live.get("stop")
+            caption = (f"{_('Price')} {num(price, 2)} · {_('stop')} {num(stop, 2)}"
+                       if price is not None and stop is not None else "")
+            out.append({"name": nice_name(s.name), "action": code, "closes": closes, "stops": stops,
+                        "today": price, "caption": caption})
+        return out
 
     def _stock_charts(self, ctx, name: str, analysis) -> list[Path]:
         """Price charts (weekly closes, 9-month stop) for every stock whose AI call or rule label is
@@ -289,9 +330,9 @@ class Agent:
         folder = self.cfg.reports_dir / ".charts"
         folder.mkdir(parents=True, exist_ok=True)
         paths = []
-        for i in range(0, len(panels), 6):
+        for i in range(0, len(panels), 4):
             try:
-                p = charts.price_vs_stop(panels[i:i + 6], folder / f"{name}_stocks_{i // 6 + 1}.png",
+                p = charts.price_vs_stop(panels[i:i + 4], folder / f"{name}_stocks_{i // 4 + 1}.png",
                                          self.cfg.rule("nine_month_weeks"))
             except Exception as e:  # noqa: BLE001
                 self.notes.append(f"stock charts failed: {e}")
@@ -334,7 +375,7 @@ class Agent:
         changes = report.dispo_changes(prev_rows, ctx.issue_rows["dispo"]) if prev_issue else []
         analysis, err = precomputed or self._analyse(ctx, "issue", changes, pdf or self._issue_pdf_path(key))
         figs = self._charts(ctx, key, True)
-        figs["stock_charts"] = self._stock_charts(ctx, key, analysis)
+        figs["stock_series"] = self._stock_series(ctx, analysis)
         ctx.notes = list(dict.fromkeys(ctx.notes + self.notes))
         self.store.save_suggestions(self.today.isoformat(), "issue:" + key, [s.as_dict() for s in ctx.suggestions])
         self.cfg.reports_dir.mkdir(parents=True, exist_ok=True)
@@ -370,7 +411,8 @@ class Agent:
 
         data = brief.daily_data(ctx, analysis, self.now, items[:brief.MAX_ACTIONS], closes_for,
                                 self.cfg.strategy_targets, len(items), self.cfg.rule("nine_month_weeks"),
-                                self.cfg.report_language)
+                                self.cfg.report_language,
+                                market=brief.market_quotes(self.market.quote, self.now, self.cfg.market_items))
         out = self.cfg.reports_dir / f"{day}_daily-brief.pdf"
         brief.render_pdf(data, out.with_suffix(".html"), out)
         self._publish(out, f"Börsen-Agent Tagesbrief {day}")

@@ -11,6 +11,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .config import DEFAULT_MARKET_ITEMS
 from .i18n import _, action, date_long, date_short, num, reason
 from .names import nice_name
 
@@ -19,7 +20,7 @@ PAPER, INK, MUTED, RULE, TRACK = "#F6F4EE", "#14171C", "#5B616B", "#CFCABB", "#E
 BODY = "#2A2F37"
 NAVY, RED, AMBER, GREEN = "#1F3A5F", "#B3261E", "#B97A00", "#1E6B4A"
 STOP_GREY = "#8A8F98"
-PAGE_W, PAGE_H = 1000, 2000
+PAGE_W, PAGE_H = 1000, 2025
 
 SERIF = "'Fraunces', Georgia, serif"
 SANS = "'Inter', system-ui, sans-serif"
@@ -83,8 +84,31 @@ def kpi(k: dict, first: bool, last: bool) -> str:
     return (
         f'<div style="{pad}; {border} display: flex; flex-direction: column; gap: 4px">'
         f'<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: {MUTED}">{esc(k["label"])}</div>'
-        f'<div style="font-family: {SERIF}; font-size: 38px; font-weight: 500; line-height: 1.1; color: {TONES.get(k.get("tone", "ink"), INK)}">{esc(k["value"])}</div>'
+        f'<div style="font-family: {SERIF}; font-size: 26px; font-weight: 500; line-height: 1.1; color: {TONES.get(k.get("tone", "ink"), INK)}">{esc(k["value"])}</div>'
         f'<div style="font-size: 12px; color: {MUTED}">{esc(k["sub"])}</div>'
+        f"</div>"
+    )
+
+
+def market_strip(mk: dict) -> str:
+    """Tinted band with the day's key market quotes (one cell per item)."""
+    cells = []
+    for i, it in enumerate(mk["items"]):
+        colour = {"up": GREEN, "down": RED}.get(it.get("dir"), MUTED)
+        edge = "padding: 0 0 0 10px; border-left: 1px solid #CFCABB;" if i else "padding: 0 10px 0 0;"
+        cells.append(
+            f'<div style="{edge} min-width: 0; display: flex; flex-direction: column; gap: 1px">'
+            f'<div style="font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: {MUTED}">{esc(it["label"])}</div>'
+            f'<div style="font-family: {SERIF}; font-size: 19px; font-weight: 500; line-height: 1.15">{esc(it["value"])}</div>'
+            f'<div style="font-size: 12px; font-weight: 600; color: {colour}">{esc(it["chg"])}</div>'
+            f"</div>"
+        )
+    return (
+        f'<div style="background: #ECE8DB; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px">'
+        f'<div style="display: flex; justify-content: space-between; align-items: baseline">'
+        f'<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase">{esc(mk["title"])}</div>'
+        f'<div style="font-size: 10.5px; color: {MUTED}">{esc(mk["note"])}</div></div>'
+        f'<div style="display: grid; grid-template-columns: repeat({len(mk["items"])}, minmax(0, 1fr))">{"".join(cells)}</div>'
         f"</div>"
     )
 
@@ -179,6 +203,7 @@ def render(d: dict) -> str:
     watch = "".join(watch_item(w, i == len(d["watch"]) - 1) for i, w in enumerate(d["watch"]))
     alloc = d["allocation"]
     alloc_rows = "".join(alloc_row(r) for r in alloc["rows"])
+    market = market_strip(d["market"]) if d.get("market") else ""
     return f"""<!doctype html>
 <html lang="{esc(d.get("lang", "en"))}">
 <head>
@@ -195,19 +220,21 @@ html, body {{ margin: 0; background: {PAPER}; -webkit-print-color-adjust: exact;
 <body>
 <div style="width: {PAGE_W}px; height: {PAGE_H}px; box-sizing: border-box; padding: 48px 56px 40px; background: {PAPER}; color: {INK}; font-family: {SANS}; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; gap: 26px; font-variant-numeric: tabular-nums">
 
-<div style="display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 20px; border-bottom: 2px solid {INK}">
+<div style="display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 12px; border-bottom: 2px solid {INK}">
 <div style="display: flex; flex-direction: column; gap: 6px">
-<div style="font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: {MUTED}">{esc(m["eyebrow"])}</div>
-<h1 style="margin: 0; font-family: {SERIF}; font-weight: 500; font-size: 52px; line-height: 1.05; letter-spacing: -0.01em">{esc(m["date"])}</h1>
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: {MUTED}">{esc(m["eyebrow"])}</div>
+<h1 style="margin: 0; font-family: {SERIF}; font-weight: 500; font-size: 34px; line-height: 1.05; letter-spacing: -0.01em">{esc(m["date"])}</h1>
 </div>
 <div style="text-align: right; display: flex; flex-direction: column; gap: 2px">
-<div style="font-family: {SERIF}; font-size: 28px; font-weight: 500">{esc(m["time"])}</div>
+<div style="font-family: {SERIF}; font-size: 20px; font-weight: 500">{esc(m["time"])}</div>
 <div style="font-size: 12px; color: {MUTED}">{esc(m["issue"][0])}</div>
 <div style="font-size: 12px; color: {MUTED}">{esc(m["issue"][1])}</div>
 </div>
 </div>
 
-<div style="display: grid; grid-template-columns: repeat({len(d["kpis"])}, minmax(0, 1fr)); border-bottom: 1px solid {RULE}; padding-bottom: 22px">{kpis}</div>
+{market}
+
+<div style="display: grid; grid-template-columns: repeat({len(d["kpis"])}, minmax(0, 1fr)); border-bottom: 1px solid {RULE}; padding-bottom: 14px">{kpis}</div>
 
 <div style="display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 40px; align-items: start">
 <div style="display: flex; flex-direction: column; gap: 8px">
@@ -306,8 +333,41 @@ def _chips(ms) -> list[dict]:
     return chips[:7]
 
 
+def market_quotes(quote, now, market_items: list[dict] | None = None) -> dict | None:
+    """The market strip: price and day change for each configured item (config [[brief.market_items]]).
+    quote(symbol) -> Quote | None."""
+    items = []
+    for row in market_items or DEFAULT_MARKET_ITEMS:
+        label, symbol, kind = row["label"], row["symbol"], row["kind"]
+        try:
+            q = quote(symbol)
+        except Exception:  # noqa: BLE001 - a missing quote shows as a dash, it must not stop the brief
+            q = None
+        if q is None or not q.price:
+            items.append({"label": label, "value": "–", "chg": "–", "dir": None})
+            continue
+        price = q.price
+        if kind == "index":
+            value = num(price, 0)
+        elif kind == "fx":
+            value = num(price, 4)
+        elif kind == "yield":
+            value = num(price, 2) + "%"
+        else:
+            value = num(price, 2) + " $"
+        change = (price / q.previous_close - 1) * 100 if q.previous_close else None
+        if change is None:
+            chg, direction = "–", None
+        else:
+            direction = "up" if change >= 0 else "down"
+            chg = ("+" if change >= 0 else "−") + num(abs(change), 2, "%")
+        items.append({"label": label, "value": value, "chg": chg, "dir": direction})
+    return {"title": _("Markets today"),
+            "note": f"{now:%d.%m.%Y %H:%M}", "items": items}
+
+
 def daily_data(ctx, analysis, now, items, closes_for, targets: dict, shown_total: int, stop_weeks: int,
-               language: str = "en") -> dict:
+               language: str = "en", market: dict | None = None) -> dict:
     """Build the brief's data from the report context.
 
     items: the (suggestion, call, action) tuples to show (already limited to MAX_ACTIONS).
@@ -394,6 +454,7 @@ def daily_data(ctx, analysis, now, items, closes_for, targets: dict, shown_total
         "meta": {"eyebrow": _("Börsen-Agent · Daily brief"), "date": date_long(now), "time": f"{now:%H:%M}",
                  "issue": list(issue_line)},
         "kpis": kpis,
+        "market": market,
         "summary": {"title": summary_title, "text": summary_text, "chips": _chips(ms)},
         "actions_header": _("Weekly closes, last 12 months · dashed line = rolling 9-month stop"),
         "actions": actions,

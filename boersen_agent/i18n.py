@@ -104,6 +104,8 @@ DE = {
     "No live price": "Kein Live-Kurs",
     "top {n} of {total}": "Top {n} von {total}",
     "no newsletter yet": "noch kein Newsletter",
+    "Markets today": "Märkte heute",
+    "Newsletter summary": "Zusammenfassung des Newsletters",
     "Market news: what to watch": "Marktnachrichten: was zu beobachten ist",
     "Market regime": "Marktlage",
     "Market regime, re-checked with live data": "Marktlage, mit aktuellen Daten nachgeprüft",

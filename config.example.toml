@@ -8,6 +8,39 @@ keep_markdown = true
 [report]
 language = "en"                 # en | de - reports, charts and the AI's text (codes stay English)
 
+[brief]
+# The market strip at the top of the daily brief. kind: index | usd (price in USD) | fx (rate) | yield (percent).
+# The symbols are Yahoo symbols; leave this out to use the six defaults (S&P 500, DAX, Nasdaq, Brent, EUR/USD, US 10J).
+[[brief.market_items]]
+label = "S&P 500"
+symbol = "^GSPC"
+kind = "index"
+
+[[brief.market_items]]
+label = "DAX"
+symbol = "^GDAXI"
+kind = "index"
+
+[[brief.market_items]]
+label = "Nasdaq"
+symbol = "^IXIC"
+kind = "index"
+
+[[brief.market_items]]
+label = "Brent"
+symbol = "BZ=F"
+kind = "usd"
+
+[[brief.market_items]]
+label = "EUR/USD"
+symbol = "EURUSD=X"
+kind = "fx"
+
+[[brief.market_items]]
+label = "US 10J"
+symbol = "^TNX"
+kind = "yield"
+
 [strategy]
 # Editable personal targets. The example is illustrative, not investment advice.
 targets = { high_risk = 10, stocks = 40, safe = 50 }

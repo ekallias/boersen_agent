@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS prices (
     series TEXT, date TEXT, close REAL, PRIMARY KEY (series, date)
 );
 CREATE TABLE IF NOT EXISTS fetch_log (series TEXT PRIMARY KEY, fetched_on TEXT);
+CREATE TABLE IF NOT EXISTS quote_currency (series TEXT PRIMARY KEY, currency TEXT);  -- '' = unknown
 CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL, kind TEXT NOT NULL,  -- initial | buy | sell | cash
@@ -134,6 +135,14 @@ class Store:
             q += " AND date >= ?"
             args.append(start)
         return [(r[0], r[1]) for r in self.db.execute(q + " ORDER BY date", args)]
+
+    def quote_currency(self, series: str) -> str | None:
+        r = self.db.execute("SELECT currency FROM quote_currency WHERE series=?", (series,)).fetchone()
+        return None if r is None else (r[0] or None)
+
+    def save_quote_currency(self, series: str, currency: str | None) -> None:
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO quote_currency VALUES (?,?)", (series, currency or ""))
 
     def fetched_on(self, series: str) -> str | None:
         r = self.db.execute("SELECT fetched_on FROM fetch_log WHERE series=?", (series,)).fetchone()

@@ -138,7 +138,18 @@ class Agent:
         mstate = compute_market(self.market, self.cfg, dash, self.now, iss["issue_date"] if iss else None)
 
         hold = holdings(self.store)
-        port = valuation(hold, self.market, self.cfg, lambda h: self._resolve_holding(h))
+        fund_allocations = {}
+        for h in hold:
+            if h.asset != "fund":
+                continue
+            symbol, _ = self._resolve_holding(h)
+            allocation = self.market.asset_allocation(symbol) if symbol else None
+            if allocation:
+                fund_allocations[h.key] = allocation
+            else:
+                source = self.market.provider.name
+                self.notes.append(f"fund allocation unavailable for {h.name} ({source}); exposure remains unclassified")
+        port = valuation(hold, self.market, self.cfg, lambda h: self._resolve_holding(h), fund_allocations)
         dispo_by_isin = {d["isin"]: d for d in rows["dispo"]}
         sug, seen = [], set()
 

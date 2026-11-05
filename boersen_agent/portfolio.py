@@ -192,11 +192,15 @@ def fx_to_eur(market, cfg, currency: str | None) -> float | None:
     return q.price * scale if q else None
 
 
-def valuation(hold: list[Holding], market, cfg, resolve) -> dict:
+def valuation(hold: list[Holding], market, cfg, resolve, fund_allocations: dict | None = None) -> dict:
     """resolve(holding) -> (symbol, verified). Per-position values and totals in EUR. Bonds without a
-    quote are valued at cost (flagged). Equity share = stocks + funds over the total; cash and bonds
-    count as cash-like."""
+    quote are valued at cost (flagged). Fund equity exposure uses provider data; unavailable fund mix
+    is unclassified rather than assumed to be equity."""
+    fund_allocations = fund_allocations or {}
+    high_risk_isins = {str(i).upper() for i in getattr(cfg, "high_risk_isins", [])}
+    targets = getattr(cfg, "strategy_targets", {"high_risk": 10.0, "stocks": 40.0, "safe": 50.0})
     rows, total, equity = [], 0.0, 0.0
+    exposure = {"high_risk": 0.0, "stocks": 0.0, "safe": 0.0, "unclassified": 0.0}
     missing, at_cost = [], []
     for h in hold:
         if h.is_cash:
@@ -206,6 +210,7 @@ def valuation(hold: list[Holding], market, cfg, resolve) -> dict:
                          "currency": h.currency})
             if eur is not None:
                 total += eur
+                exposure["safe"] += eur
             continue
         unit = 0.01 if h.asset == "bond" else 1.0
         sym, _ = resolve(h)
@@ -221,13 +226,47 @@ def valuation(hold: list[Holding], market, cfg, resolve) -> dict:
             missing.append(h.name)
         else:
             total += eur
-            if not h.cash_like:
-                equity += eur
+            row_exposure = {"high_risk": 0.0, "stocks": 0.0, "safe": 0.0, "unclassified": 0.0}
+            if h.isin and h.isin.upper() in high_risk_isins:
+                row_exposure["high_risk"] = eur
+            elif h.asset == "stock":
+                row_exposure["stocks"] = eur
+            elif h.asset == "bond":
+                row_exposure["safe"] = eur
+            elif h.asset == "fund":
+                allocation = fund_allocations.get(h.key)
+                if allocation:
+                    row_exposure["stocks"] = eur * allocation.get("stock", 0.0)
+                    row_exposure["safe"] = eur * (allocation.get("bond", 0.0) + allocation.get("cash", 0.0))
+                    row_exposure["unclassified"] = eur * allocation.get("other", 0.0)
+                else:
+                    row_exposure["unclassified"] = eur
+            else:
+                row_exposure["unclassified"] = eur
+            for bucket, value in row_exposure.items():
+                exposure[bucket] += value
+            equity += row_exposure["high_risk"] + row_exposure["stocks"]
         fx_cost = fx_to_eur(market, cfg, h.currency)
         cost_eur = h.avg_price * h.quantity * unit / fx_cost if fx_cost else None
         rows.append({"key": h.key, "name": h.name, "cash": False, "asset": h.asset, "symbol": sym,
                      "quantity": h.quantity, "price": price, "currency": cur, "value_eur": eur,
-                     "cost_eur": cost_eur, "pnl_pct": (eur / cost_eur - 1) * 100 if eur and cost_eur else None})
+                     "cost_eur": cost_eur, "pnl_pct": (eur / cost_eur - 1) * 100 if eur and cost_eur else None,
+                     "exposure_eur": row_exposure if eur is not None else None})
+    unknown_allocation = [r["name"] for r in rows if r.get("asset") == "fund" and r.get("exposure_eur")
+                          and r["exposure_eur"]["unclassified"] == r["value_eur"]
+                          and r["key"] not in fund_allocations]
+    actual_pct = {key: value / total * 100 if total else None
+                  for key, value in exposure.items() if key != "unclassified"}
+    strategy = {
+        "targets_pct": dict(targets),
+        "actual_pct": actual_pct,
+        "drift_pct": {key: actual_pct[key] - target for key, target in targets.items()
+                      if actual_pct.get(key) is not None},
+        "unclassified_pct": exposure["unclassified"] / total * 100 if total else None,
+        "unclassified_eur": exposure["unclassified"],
+        "complete": exposure["unclassified"] < 0.01 and not missing,
+    }
     return {"rows": rows, "total_eur": total if not missing else None, "known_total_eur": total,
             "stocks_eur": equity, "equity_share": equity / total * 100 if total else None,
-            "missing": missing, "at_cost": at_cost}
+            "asset_exposure_eur": exposure, "strategy": strategy,
+            "unknown_allocation": unknown_allocation, "missing": missing, "at_cost": at_cost}

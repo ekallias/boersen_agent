@@ -101,12 +101,16 @@ def portfolio_section(port) -> list[str]:
         return out + ["No portfolio imported yet (`python -m boersen_agent portfolio import FILE.csv`).", ""]
     total = port["total_eur"] if port["total_eur"] is not None else port["known_total_eur"]
     out.append(f"Value: **{_fmt(total)} EUR**" + (" (incomplete)" if port["total_eur"] is None else "")
-               + (f" · equity share {_fmt(port['equity_share'], 0, '%')}" if port["equity_share"] is not None else ""))
+               + (f" · {_('Known equity share').lower()} {_fmt(port['equity_share'], 0, '%')}"
+                  if port["equity_share"] is not None else ""))
+    out += strategy_lines(port)
     if port["missing"]:
         out.append(f"No price for: {', '.join(port['missing'])}")
     if port.get("at_cost"):
         out.append(f"Valued at cost (no quote): {', '.join(port['at_cost'])}")
-    out.append("Equity share counts stocks and funds; cash and bonds are cash-like (as in the newsletter).")
+    if port.get("unknown_allocation"):
+        out.append("Fund composition unavailable; its value is excluded from known equity exposure: "
+                   + ", ".join(port["unknown_allocation"]))
     out += ["", "| Position | Type | Qty | Price | Value EUR | P/L |", "|---|---|---|---|---|---|"]
     for r in port["rows"]:
         if r["cash"]:
@@ -116,6 +120,24 @@ def portfolio_section(port) -> list[str]:
             out.append(f"| {r['name']} | {r['asset']} | {_fmt(r['quantity'], nd)} | {_fmt(r['price'])} {r['currency'] or ''} | "
                        f"{_fmt(r['value_eur'])} | {_fmt(r['pnl_pct'], 1, '%') if r['pnl_pct'] is not None else '–'} |")
     return out + [""]
+
+
+def strategy_lines(port) -> list[str]:
+    strategy = port.get("strategy")
+    if not strategy:
+        return []
+    labels = {"high_risk": _("High risk"), "stocks": _("Stocks"), "safe": _("Safe")}
+    items = []
+    for key, target in strategy["targets_pct"].items():
+        actual = strategy["actual_pct"].get(key)
+        if actual is not None:
+            drift = strategy["drift_pct"].get(key)
+            delta = f" ({'+' if drift > 0 else ''}{_fmt(drift, 1, ' pp')})" if drift is not None else ""
+            items.append(f"{labels.get(key, key)} {_fmt(actual, 1, '%')} / {_fmt(target, 1, '%')} target{delta}")
+    unclassified = strategy.get("unclassified_pct")
+    if unclassified:
+        items.append(f"{_('Unclassified')} {_fmt(unclassified, 1, '%')}")
+    return [f"{_('Strategy allocation (actual / target)')}: " + "; ".join(items)] if items else []
 
 
 def tracks_section(ms, depot) -> list[str]:

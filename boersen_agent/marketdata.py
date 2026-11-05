@@ -76,6 +76,9 @@ class Provider:
     def search(self, query: str) -> list[Match]:
         return []
 
+    def asset_allocation(self, symbol: str) -> dict[str, float] | None:
+        return None
+
 
 class YahooProvider(Provider):
     name = "yahoo"
@@ -150,6 +153,33 @@ class EODHDProvider(Provider):
         rows = self._get(f"search/{parse.quote(query)}", limit=6)
         return [Match(f"{r['Code']}.{r['Exchange']}", r.get("Name", ""), r.get("Exchange", ""),
                       r.get("Currency"), r.get("ISIN")) for r in rows if isinstance(r, dict)]
+
+    def asset_allocation(self, symbol: str) -> dict[str, float] | None:
+        data = self._get(f"v1.1/fundamentals/{parse.quote(symbol, safe='')}",
+                         filter="ETF_Data::Asset_Allocation")
+        source = data.get("ETF_Data", {}).get("Asset_Allocation") if isinstance(data, dict) else None
+        if not isinstance(source, dict):
+            return None
+        result = {"stock": 0.0, "bond": 0.0, "cash": 0.0, "other": 0.0}
+        aliases = {
+            "stock": "stock", "stocks": "stock", "equity": "stock", "equities": "stock",
+            "stock us": "stock", "stock non-us": "stock",
+            "bond": "bond", "bonds": "bond", "fixed income": "bond",
+            "cash": "cash", "other": "other", "notclassified": "other",
+        }
+        for label, raw in source.items():
+            try:
+                percent = float(raw["Net_Assets_%"] if isinstance(raw, dict) else raw)
+            except (TypeError, ValueError):
+                return None
+            if not 0 <= percent <= 100:
+                return None
+            bucket = aliases.get(str(label).strip().lower(), "other")
+            result[bucket] += percent
+        total = sum(result.values())
+        if not 90 <= total <= 110:
+            return None
+        return {key: value / total for key, value in result.items()}
 
 
 class CSVProvider(Provider):
@@ -243,6 +273,16 @@ class Market:
         self.start = self.today - timedelta(days=365 * history_years + 30)
         self.errors: list[str] = []
         self._quotes: dict[str, Quote | None] = {}
+        self._allocations: dict[str, dict[str, float] | None] = {}
+
+    def asset_allocation(self, symbol: str) -> dict[str, float] | None:
+        if symbol not in self._allocations:
+            try:
+                self._allocations[symbol] = self.provider.asset_allocation(symbol)
+            except DataError as e:
+                self.errors.append(str(e))
+                self._allocations[symbol] = None
+        return self._allocations[symbol]
 
     def _refresh(self, series: str, fetch) -> None:
         if self.store.fetched_on(series) == self.today.isoformat():

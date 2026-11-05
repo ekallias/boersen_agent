@@ -41,7 +41,10 @@ newsletter's most important rule, so override it only with a very good reason.
 - Confidence is 0-100 and means how strongly the evidence supports the call. Use 70+ only when the \
 rules, live data and the newsletter point the same way and the data is complete. Without live price \
 data, stay at 50 or below. Disagreement between sources should pull confidence down.
-- Funds and ETFs only get the price rules; bonds and cash are cash-like and need no call.
+- Funds and ETFs only get the price rules; use their measured asset allocation for portfolio exposure
+  and strategy checks. If composition is unavailable, treat it as unclassified, not as equity.
+- Compare the portfolio's calculated allocation with the strategy targets in the fact pack. Explain
+  material deviations without proposing trades that contradict the newsletter's stated rules.
 - Be concrete and brief: name the rule, the level, the number. The investor reads this on a phone \
 before deciding; one or two sentences per rationale is right.
 {language_rule}
@@ -173,11 +176,15 @@ def build_facts(ctx, scope: str, now, changes: list[str] | None = None, previous
             "total_eur": ctx.portfolio["total_eur"] or ctx.portfolio["known_total_eur"],
             "total_complete": ctx.portfolio["total_eur"] is not None,
             "equity_share_pct": ctx.portfolio["equity_share"],
+            "strategy": ctx.portfolio["strategy"],
+            "asset_exposure_eur": ctx.portfolio["asset_exposure_eur"],
+            "unclassified_funds": ctx.portfolio["unknown_allocation"],
             "cash_like": [{"name": r["name"], "asset": r.get("asset"), "value_eur": r["value_eur"]}
                           for r in ctx.portfolio["rows"] if r.get("cash") or r.get("asset") == "bond"],
             "positions": [_sug(s, {"asset": port_rows.get(s.key, {}).get("asset"),
                                    "value_eur": port_rows.get(s.key, {}).get("value_eur"),
-                                   "pnl_pct": port_rows.get(s.key, {}).get("pnl_pct")}) for s in held],
+                                   "pnl_pct": port_rows.get(s.key, {}).get("pnl_pct"),
+                                   "exposure_eur": port_rows.get(s.key, {}).get("exposure_eur")}) for s in held],
         },
         "data_gaps": list(dict.fromkeys(ctx.notes)),
         "previous_ai_notes": (previous or {}).get("notes_for_next_run"),

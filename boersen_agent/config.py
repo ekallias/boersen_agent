@@ -44,6 +44,8 @@ DEFAULT_SYMBOLS = {
     },
 }
 
+DEFAULT_STRATEGY_TARGETS = {"high_risk": 10.0, "stocks": 40.0, "safe": 50.0}
+
 
 @dataclass
 class Config:
@@ -70,6 +72,8 @@ class Config:
     ai_server_fallbacks: bool = True        # Anthropic server-side refusal fallback (turn off if a gateway rejects it)
     keep_markdown: bool = True
     report_language: str = "en"             # en | de: language of reports, charts and the AI's text
+    strategy_targets: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_STRATEGY_TARGETS))
+    high_risk_isins: list[str] = field(default_factory=list)
 
     @property
     def db_path(self) -> Path:
@@ -106,6 +110,22 @@ def load(path: str | Path | None) -> Config:
 
     token_env = mk.get("token_env", "EODHD_API_TOKEN")
     ai = raw.get("ai", {})
+    strategy = raw.get("strategy", {})
+    unknown_strategy = set(strategy) - {"targets", "high_risk_isins"}
+    if unknown_strategy:
+        raise ValueError(f"unknown strategy keys: {sorted(unknown_strategy)}")
+    if not isinstance(strategy.get("targets", {}), dict):
+        raise ValueError("strategy.targets must be a table of allocation percentages")
+    high_risk_isins = strategy.get("high_risk_isins", [])
+    if not isinstance(high_risk_isins, list):
+        raise ValueError("strategy.high_risk_isins must be a list")
+    targets = dict(DEFAULT_STRATEGY_TARGETS)
+    unknown_targets = set(strategy.get("targets", {})) - set(targets)
+    if unknown_targets:
+        raise ValueError(f"unknown strategy target keys: {sorted(unknown_targets)}")
+    targets.update({key: float(value) for key, value in strategy.get("targets", {}).items()})
+    if any(value < 0 for value in targets.values()) or abs(sum(targets.values()) - 100) > 0.01:
+        raise ValueError("strategy.targets must be non-negative and add up to 100")
     return Config(
         data_dir=rel(paths.get("data_dir", "data")),
         reports_dir=rel(paths.get("reports_dir", "reports")),
@@ -130,4 +150,6 @@ def load(path: str | Path | None) -> Config:
         ai_server_fallbacks=bool(ai.get("server_fallbacks", True)),
         keep_markdown=bool(paths.get("keep_markdown", True)),
         report_language=str(raw.get("report", {}).get("language", "en")),
+        strategy_targets=targets,
+        high_risk_isins=[str(isin).upper() for isin in high_risk_isins],
     )

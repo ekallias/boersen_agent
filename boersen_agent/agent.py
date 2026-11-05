@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from . import charts, pdfreport, report
+from . import brief, charts, pdfreport, report, weekly
 from . import rules as R
 from .analyst import AnalystError, analyse, build_facts
 from .marketdata import DataError
@@ -244,10 +244,6 @@ class Agent:
                 [{"name": s.name, "dist": s.live.get("dist_to_stop_pct"),
                   "breach": s.live.get("stop_breach_confirmed")} for s in held],
                 folder / f"{name}_stop_distance.png", self.cfg.rule("near_stop_pct"))
-            panels = [{"name": s.name, "weekly": R.weekly(self.market.daily_with_quote(s.symbol), self.now)[0]}
-                      for s in held if s.symbol]
-            out["price_vs_stop"] = charts.price_vs_stop(panels, folder / f"{name}_price_vs_stop.png",
-                                                        self.cfg.rule("nine_month_weeks"))
         except Exception as e:  # noqa: BLE001 - a broken chart must not stop the report
             self.notes.append(f"position charts failed: {e}")
         go("value_history", charts.value_history, self.store.snapshots())
@@ -265,6 +261,44 @@ class Agent:
             go("rs_kuv", charts.rs_kuv, ctx.issue_rows["universe"], groups, self.cfg.rule("rs_top_n"),
                self.cfg.rule("kuv_normal_max"))
         return {k: v for k, v in out.items() if v}
+
+    CHARTED_ACTIONS = ("SELL", "REDUCE", "REVIEW", "BUY")
+
+    def _stock_charts(self, ctx, name: str, analysis) -> list[Path]:
+        """Price charts (weekly closes, 9-month stop) for every stock whose AI call or rule label is
+        SELL, REDUCE, REVIEW or BUY, in pages of six."""
+        calls = analysis.calls_by_key() if analysis else {}
+        order = {a: i for i, a in enumerate(self.CHARTED_ACTIONS)}
+        chosen = []
+        for s in ctx.suggestions:
+            ai_action = (calls.get(s.key) or {}).get("action")
+            if s.action in order or ai_action in order:
+                best = min([order[a] for a in (s.action, ai_action) if a in order])
+                chosen.append((best, s))
+        panels = []
+        for _rank, s in sorted(chosen, key=lambda t: (t[0], -t[1].confidence)):
+            if not s.symbol:
+                self.notes.append(f"no price chart for {s.name}: no market symbol")
+                continue
+            try:
+                weekly = R.weekly(self.market.daily_with_quote(s.symbol), self.now)[0]
+            except Exception as e:  # noqa: BLE001 - one bad symbol must not stop the report
+                self.notes.append(f"no price chart for {s.name}: {e}")
+                continue
+            panels.append({"name": s.name, "weekly": weekly})
+        folder = self.cfg.reports_dir / ".charts"
+        folder.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for i in range(0, len(panels), 6):
+            try:
+                p = charts.price_vs_stop(panels[i:i + 6], folder / f"{name}_stocks_{i // 6 + 1}.png",
+                                         self.cfg.rule("nine_month_weeks"))
+            except Exception as e:  # noqa: BLE001
+                self.notes.append(f"stock charts failed: {e}")
+                p = None
+            if p:
+                paths.append(p)
+        return paths
 
     # ------------------------------------------------------------------ outputs
     def _publish(self, pdf: Path, title: str) -> None:
@@ -300,14 +334,15 @@ class Agent:
         changes = report.dispo_changes(prev_rows, ctx.issue_rows["dispo"]) if prev_issue else []
         analysis, err = precomputed or self._analyse(ctx, "issue", changes, pdf or self._issue_pdf_path(key))
         figs = self._charts(ctx, key, True)
+        figs["stock_charts"] = self._stock_charts(ctx, key, analysis)
         ctx.notes = list(dict.fromkeys(ctx.notes + self.notes))
         self.store.save_suggestions(self.today.isoformat(), "issue:" + key, [s.as_dict() for s in ctx.suggestions])
         self.cfg.reports_dir.mkdir(parents=True, exist_ok=True)
         if self.cfg.keep_markdown:
             (self.cfg.reports_dir / f"{key}_newsletter-report.md").write_text(
                 report.biweekly(ctx, prev_issue, prev_rows, self.cfg, self.now, analysis, err), encoding="utf-8")
-        out = pdfreport.issue(self.cfg.reports_dir / f"{key}_newsletter-report.pdf", ctx, analysis, err,
-                              figs, changes, self.now)
+        out = weekly.render_issue(ctx, analysis, err, self.now, changes, figs, ctx.notes, pdfreport.DISCLAIMER,
+                                  self.cfg.reports_dir / f"{key}_newsletter-report.pdf")
         self._publish(out, f"Börsen-Agent Bericht Ausgabe {key}")
         return out
 
@@ -323,7 +358,21 @@ class Agent:
         if self.cfg.keep_markdown:
             (self.cfg.reports_dir / f"{day}_daily-brief.md").write_text(
                 report.daily(ctx, self.cfg, self.now, analysis, err), encoding="utf-8")
-        out = pdfreport.daily(self.cfg.reports_dir / f"{day}_daily-brief.pdf", ctx, analysis, err, {}, self.now)
+        items = report.daily_action_items(ctx, analysis)
+
+        def closes_for(symbol: str) -> list[float] | None:
+            try:
+                done = R.weekly(self.market.daily_with_quote(symbol), self.now)[0]
+            except Exception as e:  # noqa: BLE001 - a missing history must not stop the brief
+                self.notes.append(f"no price history for {symbol}: {e}")
+                return None
+            return [c for _d, c in done]
+
+        data = brief.daily_data(ctx, analysis, self.now, items[:brief.MAX_ACTIONS], closes_for,
+                                self.cfg.strategy_targets, len(items), self.cfg.rule("nine_month_weeks"),
+                                self.cfg.report_language)
+        out = self.cfg.reports_dir / f"{day}_daily-brief.pdf"
+        brief.render_pdf(data, out.with_suffix(".html"), out)
         self._publish(out, f"Börsen-Agent Tagesbrief {day}")
         return out
 

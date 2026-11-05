@@ -268,12 +268,16 @@ class GermanReports(AgentEndToEnd):
             paths = self.run_agent(ai)
         finally:
             i18n.set_lang("en")
-        text = subprocess.run(["pdftotext", str(paths[1]), "-"], capture_output=True, text=True).stdout
-        for word in ("Tagesbrief", "Positionen", "VERKAUFEN", "Aktienquote", "Marktlage", "Seite 1"):
+        def normalized(path):
+            # the brief's eyebrow is set in uppercase with letter-spacing, so compare case- and space-insensitively
+            text = subprocess.run(["pdftotext", str(path), "-"], capture_output=True, text=True).stdout
+            return "".join(text.split()).upper()
+        text = normalized(paths[1])
+        for word in ("TAGESBRIEF", "POSITIONEN", "VERKAUFEN", "AKTIENQUOTE", "MARKTLAGE"):
             self.assertIn(word, text)
-        self.assertNotIn("Your positions", text)
-        issue_text = subprocess.run(["pdftotext", str(paths[0]), "-"], capture_output=True, text=True).stdout
-        self.assertIn("Empfehlungen der Ausgabe, geprüft", issue_text)
+        self.assertNotIn("YOURPOSITIONS", text)
+        issue_text = normalized(paths[0])
+        self.assertIn("EMPFEHLUNGENDERAUSGABE,GEPRÜFT", issue_text)
         md = (self.cfg.reports_dir / "2026-11-05_daily-brief.md").read_text()
         self.assertIn("## KI-Analyse", md)
         self.assertIn("Wochenschluss unter dem 9-Monats-Tief", md)

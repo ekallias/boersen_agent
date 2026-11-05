@@ -20,7 +20,7 @@ from . import rules as R  # noqa: E402
 from .i18n import _, is_de, num  # noqa: E402
 from .names import nice_name  # noqa: E402
 
-SURFACE, INK, INK2, MUTED = "#fcfcfb", "#0b0b0b", "#52514e", "#898781"
+SURFACE, INK, INK2, MUTED = "#F6F4EE", "#0b0b0b", "#52514e", "#898781"
 GRID, AXIS = "#e1e0d9", "#c3c2b7"
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a"]          # blue, orange, aqua (validated all-pairs)
 GOOD, WARNING, SERIOUS, CRITICAL = "#0ca30c", "#fab219", "#ec835a", "#d03b3b"

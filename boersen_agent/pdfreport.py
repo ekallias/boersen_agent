@@ -342,6 +342,33 @@ def _chart_section(title, path, note=None):
     return [KeepTogether(parts)]
 
 
+def stock_charts_block(paths: list[Path]) -> list:
+    """Price charts for the stocks labelled SELL, REDUCE, REVIEW or BUY (one image per page of six)."""
+    imgs = [img for img in (image(p) for p in paths) if img]
+    if not imgs:
+        return []
+    story = [P(_("Price charts: stocks labelled SELL, REDUCE, REVIEW or BUY"), "h2"),
+             P(_("Weekly closes over the last year. The dashed line is the rolling 9-month stop (39 weeks)."), "small"),
+             Spacer(1, 2)]
+    for img in imgs:
+        story += [img, Spacer(1, 4)]
+    return story
+
+
+def news_block(analysis, title: str) -> list:
+    """The market news that matters today, with what to watch for (from the AI analyst)."""
+    items = analysis.data.get("market_news", []) if analysis else []
+    if not items:
+        return []
+    story = h1(_(title))
+    for it in items:
+        story.append(P(f"<b>{escape(it['headline'])}</b>", "body"))
+        story.append(P(escape(it["why_it_matters"]), "small"))
+        story.append(P("→ " + escape(it["watch_for"]), "small"))
+        story.append(Spacer(1, 3))
+    return story
+
+
 def daily_actions(items: list[tuple]) -> list:
     if not items:
         return [P(_("No position actions flagged."), "small")]
@@ -395,6 +422,8 @@ def daily(path: Path, ctx, analysis, ai_error, charts: dict, now) -> Path:
             summary = summary[:497].rsplit(" ", 1)[0] + "…"
         story += [box([P(headline, "lead"), P(summary, "small")])]
     story += h1(_("Action items")) + daily_actions(items)
+    story += news_block(analysis, "What to watch today")
+    story += stock_charts_block(charts.get("stock_charts", []))
     unknown = port.get("unknown_allocation", [])
     details = [f"{_('Value')}: {_fmt(total, 0)} €", f"{_('Positions')}: {len(mine)}"]
     details += strategy_lines(port)
@@ -443,6 +472,7 @@ def issue(path: Path, ctx, analysis, ai_error, charts: dict, changes: list[str],
                     (_("Sell"), str(recs.count("V")), _("V in the Dispo-Liste"), "#c02f2f" if recs.count("V") else None),
                     (_("New ideas"), str(len(analysis.data["new_ideas"]) if analysis else len(cands)), _("from the 700-stock list"), None)])
     story += ai_block(analysis, ai_error)
+    story += news_block(analysis, "Market news: what to watch")
     story += h1(_("Your portfolio against this issue")) + (calls_table(mine, calls) if mine else [P(_("No portfolio imported yet."))])
     story += h1(_("Newsletter recommendations, checked"))
     story += [P(_("Newsletter = the issue's buy / hold / sell, with the AI analyst's verdict (confirmed · questionable · "
@@ -471,6 +501,7 @@ def issue(path: Path, ctx, analysis, ai_error, charts: dict, changes: list[str],
     story += _chart_section("Stock list: relative strength vs. KUV", charts.get("rs_kuv"),
                             "Buy candidates sit right of the top-200 line and below the KUV line.")
     story += _chart_section("Your allocation", charts.get("allocation"))
+    story += stock_charts_block(charts.get("stock_charts", []))
     story += [KeepTogether(h1(_("Market regime, re-checked with live data")) + tiles(_regime_tiles(ctx.market)))] \
         + market_table(ctx.market, dash)
     story += h1(_("Portfolio")) + portfolio_table(ctx.portfolio)

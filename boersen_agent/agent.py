@@ -317,14 +317,13 @@ class Agent:
         self.store.save_snapshot(day, ctx.portfolio["total_eur"],
                                  {"rows": ctx.portfolio["rows"], "equity_share": ctx.portfolio["equity_share"]})
         analysis, err = precomputed or self._analyse(ctx, "daily")
-        figs = self._charts(ctx, day, False)
         ctx.notes = list(dict.fromkeys(ctx.notes + self.notes))
         self.store.save_suggestions(day, "daily", [s.as_dict() for s in ctx.suggestions])
         self.cfg.reports_dir.mkdir(parents=True, exist_ok=True)
         if self.cfg.keep_markdown:
             (self.cfg.reports_dir / f"{day}_daily-brief.md").write_text(
                 report.daily(ctx, self.cfg, self.now, analysis, err), encoding="utf-8")
-        out = pdfreport.daily(self.cfg.reports_dir / f"{day}_daily-brief.pdf", ctx, analysis, err, figs, self.now)
+        out = pdfreport.daily(self.cfg.reports_dir / f"{day}_daily-brief.pdf", ctx, analysis, err, {}, self.now)
         self._publish(out, f"Börsen-Agent Tagesbrief {day}")
         return out
 

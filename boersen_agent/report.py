@@ -184,39 +184,86 @@ def ai_section(analysis, err) -> list[str]:
     return out
 
 
+def daily_action_items(ctx, analysis=None) -> list[tuple[object, dict | None, str]]:
+    calls = analysis.calls_by_key() if analysis else {}
+    items = []
+    for suggestion in ctx.suggestions:
+        if not suggestion.in_portfolio:
+            continue
+        call = calls.get(suggestion.key)
+        action_code = call["action"] if call else suggestion.action
+        rule_action = call.get("rule_action", suggestion.action) if call else suggestion.action
+        if action_code != "HOLD" or rule_action != action_code:
+            items.append((suggestion, call, action_code))
+    return sorted(items, key=lambda item: (ACTION_ORDER.get(item[2], 9), -(
+        item[1]["confidence"] if item[1] else item[0].confidence)))
+
+
 def daily(ctx, cfg, now: datetime, analysis=None, err=None) -> str:
     ms, iss = ctx.market, ctx.issue
-    lines = [f"# Daily brief — {now:%Y-%m-%d %H:%M}", "", DISCLAIMER, ""] + ai_section(analysis, err)
-    if iss:
-        lines.append(f"Newsletter basis: issue {iss['issue_key']} of {iss['issue_date']}. "
-                     f"Prices: {cfg.provider} (usually delayed ~15 min).")
+    lines = [f"# Daily brief — {now:%Y-%m-%d %H:%M}", ""]
+    if analysis:
+        data = analysis.data
+        lines += [f"**{data['headline']}**", "", data["summary"], ""]
     else:
-        lines.append("No newsletter ingested yet: market rules use live data only.")
-    lines += [""] + market_section(ms, ctx.dashboard)
+        lines += ["_" + _("AI analysis unavailable: {err}. The tables show the rule engine's results only.")
+                  .format(err=err or "disabled in config") + "_", ""]
+
+    if iss:
+        lines.append(_("Newsletter context: {issue} ({date}); full issue analysis is in its biweekly report.")
+                     .format(issue=iss["issue_key"], date=iss["issue_date"]))
+    else:
+        lines.append(_("No newsletter ingested; market rules use live data only."))
+
     mine = [s for s in ctx.suggestions if s.in_portfolio]
-    alerts = [s for s in mine if s.action in ("SELL", "REDUCE", "WATCH")]
+    items = daily_action_items(ctx, analysis)
     changes = []
     for s in mine:
-        p = ctx.previous.get(s.key)
-        if p and p["action"] != s.action:
-            changes.append(f"- {s.name}: {p['action']} → **{s.action}** ({s.confidence})")
+        previous = ctx.previous.get(s.key)
+        if previous and previous["action"] != s.action:
+            changes.append(f"- {s.name}: {previous['action']} → **{s.action}** ({s.confidence})")
+
     lines += ["## " + _("Today"), ""]
-    if alerts:
-        lines += [f"- **{action(s.action)}** {s.name} ({s.confidence}): {reason(s.reasons[0]['text'])}" for s in alerts]
+    if items:
+        for s, call, action_code in items:
+            rationale = call["rationale"] if call else (reason(s.reasons[0]["text"]) if s.reasons else "")
+            confidence = call["confidence"] if call else s.confidence
+            rule_action = call.get("rule_action", s.action) if call else s.action
+            action_label = action(action_code)
+            if rule_action != action_code:
+                action_label += f" (rules: {action(rule_action)})"
+                if call.get("override_reason"):
+                    rationale = call["override_reason"] + " " + rationale
+            lines.append(f"- **{action_label}** {s.name} ({confidence}): {rationale}")
     else:
-        lines.append("- No sell or watch signals on your positions.")
+        lines.append("- No position actions flagged.")
     if changes:
         lines += ["", "Changes since the last brief:"] + changes
-    lines += [""] + portfolio_section(ctx.portfolio)
-    if mine:
-        lines += ["## " + _("Position signals"), ""] + suggestion_table(mine, with_rec=True) + [""] + reasons_block(mine) + [""]
-    depot = None
-    if iss and iss.get("depot"):
-        import json
-        depot = json.loads(iss["depot"])
-    lines += tracks_section(ms, depot)
+
+    port = ctx.portfolio
+    total = port["total_eur"] if port["total_eur"] is not None else port["known_total_eur"]
+    lines += ["", "## " + _("Portfolio snapshot"), "",
+              f"- Value: {_fmt(total)} EUR" + (" (incomplete)" if port["total_eur"] is None else ""),
+              f"- {_('Known equity share')}: {_fmt(port['equity_share'], 0, '%') if port['equity_share'] is not None else '–'}"]
+    lines += [f"- {line}" for line in strategy_lines(port)]
+    lines += [
+              f"- {_('Positions')}: {len(mine)}"]
+    if port.get("unknown_allocation"):
+        lines.append(f"- Fund composition unavailable: {', '.join(port['unknown_allocation'])}")
+
+    safe = ms.safety_effective
+    safe_text = {1: "positive", -1: "negative", None: "unknown"}.get(safe, "unknown")
+    score = _score(ms.gesamt_score)
+    season = _("positive (Nov–Apr)" if ms.season_positive else "caution (May–Oct)")
+    lines += ["", "## " + _("Market context"), "",
+              "- " + _("Gesamtsystem {score}; Sicherheitssystem {safety}; {season}.")
+              .format(score=score, safety=safe_text,
+                      season=_("strict summer exit active" if ms.safety_strict else "no strict summer exit")),
+              f"- {_('Season')}: {season}.",
+              f"- Market data: {cfg.provider}; prices are usually delayed ~15 minutes."]
     if ctx.notes:
-        lines += ["## Data notes", ""] + [f"- {n}" for n in dict.fromkeys(ctx.notes)] + [""]
+        lines += ["", "## " + _("Data notes"), ""] + [f"- {n}" for n in dict.fromkeys(ctx.notes)]
+    lines += ["", DISCLAIMER]
     return "\n".join(lines)
 
 

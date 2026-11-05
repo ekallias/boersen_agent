@@ -75,7 +75,7 @@ SCHEMA = {
     "type": "object",
     "properties": {
         "headline": {"type": "string", "description": "one line, the single most important point today"},
-        "summary": {"type": "string", "description": "3-6 sentences: market, portfolio, what to do"},
+        "summary": {"type": "string", "description": "Daily: at most 2 short sentences; issue: 3-6 sentences. Lead with what needs attention."},
         "market_view": {
             "type": "object",
             "properties": {
@@ -253,7 +253,9 @@ def analyse(facts: dict, *, model: str, effort: str, pdf: Path | None = None, cl
                                    "data": base64.standard_b64encode(Path(pdf).read_bytes()).decode()}})
     task = ("Write the biweekly issue report: read the attached issue, check its recommendations against "
             "the live facts, and apply it to the portfolio." if facts["scope"] == "issue" else
-            "Write today's brief for the portfolio.")
+            "Write a concise one-page daily brief. Lead with any position that needs action; avoid repeating "
+            "the detailed newsletter analysis, list only material risks, and use at most two short sentences "
+            "for the summary.")
     content.append({"type": "text", "text": f"{task}\n\nFact pack:\n```json\n"
                     f"{json.dumps(facts, ensure_ascii=False, indent=1, default=str)}\n```"})
     try:

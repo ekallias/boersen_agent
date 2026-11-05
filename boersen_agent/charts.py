@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
-from matplotlib.ticker import FuncFormatter  # noqa: E402
+from matplotlib.ticker import FuncFormatter, MaxNLocator  # noqa: E402
 
 from . import rules as R  # noqa: E402
 from .i18n import _, is_de, num  # noqa: E402
@@ -27,9 +27,9 @@ GOOD, WARNING, SERIOUS, CRITICAL = "#0ca30c", "#fab219", "#ec835a", "#d03b3b"
 DPI = 200
 
 plt.rcParams.update({
-    "font.family": "DejaVu Sans", "font.size": 8.5, "axes.edgecolor": AXIS, "axes.labelcolor": INK2,
+    "font.family": "DejaVu Sans", "font.size": 10.5, "axes.edgecolor": AXIS, "axes.labelcolor": INK2,
     "xtick.color": MUTED, "ytick.color": MUTED, "axes.facecolor": SURFACE, "figure.facecolor": SURFACE,
-    "savefig.facecolor": SURFACE, "axes.titlesize": 9, "axes.titlecolor": INK, "legend.frameon": False,
+    "savefig.facecolor": SURFACE, "axes.titlesize": 12, "axes.titlecolor": INK, "legend.frameon": False,
 })
 
 
@@ -91,7 +91,7 @@ def allocation(rows: list[dict], path: Path) -> Path | None:
     group = {"stock": 0, "fund": 1, "bond": 2, "cash": 2}
     names = {0: _("Stocks"), 1: _("Funds / ETFs"), 2: _("Cash-like (cash, bonds)")}
     data.sort(key=lambda r: r["value_eur"])
-    fig, ax = plt.subplots(figsize=(7.2, 0.32 * len(data) + 0.9))
+    fig, ax = plt.subplots(figsize=(7.2, 0.42 * len(data) + 1.0))
     y = range(len(data))
     cols = [SERIES[group.get(r.get("asset") or ("cash" if r.get("cash") else "stock"), 0)] for r in data]
     ax.barh(list(y), [r["value_eur"] for r in data], height=0.68, color=cols)
@@ -101,6 +101,7 @@ def allocation(rows: list[dict], path: Path) -> Path | None:
         ax.text(r["value_eur"] + top * 0.01, i, _eur(r["value_eur"]) + " €", va="center", color=INK2, fontsize=7.5)
     ax.set_xlim(0, top * 1.15)
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _p: _eur(v)))
+    ax.xaxis.set_major_locator(MaxNLocator(5))
     _axes(ax, "x")
     used = sorted({group.get(r.get("asset") or ("cash" if r.get("cash") else "stock"), 0) for r in data})
     ax.legend(handles=[Patch(facecolor=SERIES[g], label=names[g]) for g in used], loc="lower right", fontsize=7.5)
@@ -114,7 +115,7 @@ def stop_distance(items: list[dict], path: Path, near_pct: float) -> Path | None
     if not data:
         return None
     data.sort(key=lambda i: i["dist"], reverse=True)
-    fig, ax = plt.subplots(figsize=(7.2, 0.32 * len(data) + 0.9))
+    fig, ax = plt.subplots(figsize=(7.2, 0.42 * len(data) + 1.0))
     for k, i in enumerate(data):
         d = i["dist"]
         broke = d < 0 or i.get("breach")
@@ -137,12 +138,12 @@ def stop_distance(items: list[dict], path: Path, near_pct: float) -> Path | None
 
 def price_vs_stop(panels: list[dict], path: Path, weeks: int = 39) -> Path | None:
     """Small multiples: weekly closes (1 year) with the rolling 9-month stop below them."""
-    panels = [p for p in panels if len(p["weekly"]) > weeks + 4][:6]
+    panels = [p for p in panels if len(p["weekly"]) > weeks + 4][:4]
     if not panels:
         return None
-    cols = 3 if len(panels) > 4 else 2 if len(panels) > 1 else 1
+    cols = 2 if len(panels) > 1 else 1
     rows_n = (len(panels) + cols - 1) // cols
-    fig, axes = plt.subplots(rows_n, cols, figsize=(7.2, 1.55 * rows_n + 0.2), squeeze=False)
+    fig, axes = plt.subplots(rows_n, cols, figsize=(7.2, 2.7 * rows_n + 0.3), squeeze=False)
     for ax, p in zip([a for r in axes for a in r], panels):
         wk = p["weekly"]
         closes = [c for _, c in wk]
@@ -152,9 +153,11 @@ def price_vs_stop(panels: list[dict], path: Path, weeks: int = 39) -> Path | Non
         ax.plot(dates, closes[start:], color=SERIES[0], linewidth=1.6)
         ax.step(dates, stop[start:], where="post", color=MUTED, linewidth=1.0, linestyle=(0, (3, 2)))
         if stop[-1] is not None:
-            ax.text(dates[-1], stop[-1], _(" stop {v}").format(v=num(stop[-1], 2)), color=MUTED, fontsize=7, va="top")
-        ax.text(dates[-1], closes[-1], " " + num(closes[-1], 2), color=INK2, fontsize=7, va="bottom")
-        ax.set_title(_short(p["name"], 26 if cols == 3 else 40), loc="left")
+            pct = (closes[-1] / stop[-1] - 1) * 100 if stop[-1] else 0.0
+            ax.text(dates[-1], stop[-1], _(" stop {v}").format(v=num(stop[-1], 2)) + f"  ({pct:+.1f} %)",
+                    color=MUTED, fontsize=9, va="top")
+        ax.text(dates[-1], closes[-1], " " + num(closes[-1], 2), color=INK2, fontsize=9, va="bottom")
+        ax.set_title(_short(p["name"], 40), loc="left")
         ax.xaxis.set_major_locator(mdates.MonthLocator(bymonth=[1, 7] if cols == 3 else [1, 4, 7, 10]))
         ax.xaxis.set_major_formatter(_datefmt("%b %y"))
         ax.margins(x=0.12)
@@ -168,7 +171,7 @@ def value_history(snapshots: list[tuple[str, float]], path: Path) -> Path | None
     pts = [(R.d(d), v) for d, v in snapshots if v]
     if len(pts) < 2:
         return None
-    fig, ax = plt.subplots(figsize=(7.2, 2.2))
+    fig, ax = plt.subplots(figsize=(7.2, 2.8))
     ax.plot([p[0] for p in pts], [p[1] for p in pts], color=SERIES[0], linewidth=1.6)
     ax.text(pts[-1][0], pts[-1][1], f" {_eur(pts[-1][1])} €", color=INK2, fontsize=7.5, va="center")
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _p: _eur(v)))
@@ -184,7 +187,7 @@ def gesamt_history(issues: list[dict], path: Path) -> Path | None:
     data = [i for i in issues if i.get("score")]
     if len(data) < 2:
         return None
-    fig, ax = plt.subplots(figsize=(7.2, 2.3))
+    fig, ax = plt.subplots(figsize=(7.2, 2.9))
     x = list(range(len(data)))
     for k, i in enumerate(data):
         pos, neg = i["score"]
@@ -207,7 +210,7 @@ def zins_history(rows: list[tuple[str, float | None, float | None]], path: Path)
     comp = [(R.d(d), c) for d, _, c in rows if c is not None]
     if len(pub) < 2 and len(comp) < 2:
         return None
-    fig, ax = plt.subplots(figsize=(7.2, 2.3))
+    fig, ax = plt.subplots(figsize=(7.2, 2.9))
     for pts, col, label in ((pub, SERIES[0], "newsletter"), (comp, SERIES[1], "computed")):
         if len(pts) >= 2:
             ax.plot([p[0] for p in pts], [p[1] for p in pts], color=col, linewidth=1.6, label=_(label))
@@ -231,7 +234,7 @@ def rs_kuv(universe: list[dict], highlights: dict[str, list[dict]], top_n: int, 
     pts = [u for u in universe if u.get("rs") and u.get("kuv")]
     if len(pts) < 20:
         return None
-    fig, ax = plt.subplots(figsize=(7.2, 4.0))
+    fig, ax = plt.subplots(figsize=(7.2, 4.8))
     ax.set_yscale("log")
     ax.scatter([u["rs"] for u in pts], [u["kuv"] for u in pts], s=6, color=AXIS, linewidths=0, label=_("stock list"))
     labelled = []

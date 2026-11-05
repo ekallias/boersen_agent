@@ -184,6 +184,9 @@ def ai_section(analysis, err) -> list[str]:
     return out
 
 
+MAX_DAILY_ACTIONS = 4  # the daily brief shows at most this many position actions
+
+
 def daily_action_items(ctx, analysis=None) -> list[tuple[object, dict | None, str]]:
     calls = analysis.calls_by_key() if analysis else {}
     items = []
@@ -216,7 +219,7 @@ def daily(ctx, cfg, now: datetime, analysis=None, err=None) -> str:
         lines.append(_("No newsletter ingested; market rules use live data only."))
 
     mine = [s for s in ctx.suggestions if s.in_portfolio]
-    items = daily_action_items(ctx, analysis)
+    items = daily_action_items(ctx, analysis)[:MAX_DAILY_ACTIONS]
     changes = []
     for s in mine:
         previous = ctx.previous.get(s.key)

@@ -1,5 +1,6 @@
 """End-to-end: fake Paperless + CSV prices + synthetic rates -> both reports."""
 import json
+import subprocess
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -161,12 +162,15 @@ class AgentEndToEnd(unittest.TestCase):
         self.assertEqual([p.name for p in paths], ["2026-22_newsletter-report.pdf", "2026-11-05_daily-brief.pdf"])
         for p in paths:
             self.assertEqual(p.read_bytes()[:5], b"%PDF-")
-            self.assertGreater(p.stat().st_size, 20_000)                            # charts are embedded
+        self.assertGreater(paths[0].stat().st_size, 20_000)                         # issue charts are embedded
+        pages = subprocess.run(["pdfinfo", str(paths[1])], capture_output=True, text=True, check=True).stdout
+        self.assertIn("Pages:           1", pages)
         self.assertEqual(self.store.issue_keys(), ["2026-22"])                       # duplicate upload skipped
         daily = (self.cfg.reports_dir / "2026-11-05_daily-brief.md").read_text()
         self.assertIn("Test headline", daily)
-        self.assertIn("broke the 9-month low", daily)                               # rule engine still runs
-        self.assertIn("⚠ overrides rule", daily)                                    # AI override is flagged
+        self.assertIn("rules: SELL", daily)                                         # AI override cannot hide a rule call
+        self.assertIn("Test override", daily)
+        self.assertNotIn("Distance to the 9-month stop", daily)                     # no repeated issue detail
         self.assertNotIn("INVENTED", daily)                                         # unknown key dropped
         bi = (self.cfg.reports_dir / "2026-22_newsletter-report.md").read_text()
         self.assertIn("Kandidat AG", bi)
@@ -189,8 +193,20 @@ class AgentEndToEnd(unittest.TestCase):
         with mock.patch.dict("os.environ", {}, clear=True):
             paths = self.run_agent(ai=None)
         daily = (self.cfg.reports_dir / "2026-11-05_daily-brief.md").read_text()
-        self.assertIn("Unavailable: no Anthropic credentials", daily)
+        self.assertIn("no Anthropic credentials", daily)
         self.assertTrue(all(p.read_bytes()[:5] == b"%PDF-" for p in paths))
+
+    def test_daily_brief_pdf_is_one_page_without_repeated_charts(self):
+        with mock.patch.dict(marketdata.RATE_SOURCES, rates()), \
+             mock.patch.object(Agent, "_charts", return_value={}):
+            agent = Agent(self.cfg, self.store, self.market, self.pl, datetime(2026, 11, 5, 18, 0),
+                          ai_client=FakeAI())
+            path = agent.daily()
+        info = subprocess.run(["pdfinfo", str(path)], capture_output=True, text=True, check=True).stdout
+        self.assertIn("Pages:           1", info)
+        markdown = (self.cfg.reports_dir / "2026-11-05_daily-brief.md").read_text()
+        self.assertNotIn("Distance to the 9-month stop", markdown)
+        self.assertIn("## Market context", markdown)
 
     def test_second_run_same_day_does_not_reingest(self):
         self.run_agent(FakeAI())
@@ -253,7 +269,7 @@ class GermanReports(AgentEndToEnd):
         finally:
             i18n.set_lang("en")
         text = subprocess.run(["pdftotext", str(paths[1]), "-"], capture_output=True, text=True).stdout
-        for word in ("Tagesbrief", "Ihre Positionen", "VERKAUFEN", "Aktienquote", "Marktlage", "Seite 1"):
+        for word in ("Tagesbrief", "Positionen", "VERKAUFEN", "Aktienquote", "Marktlage", "Seite 1"):
             self.assertIn(word, text)
         self.assertNotIn("Your positions", text)
         issue_text = subprocess.run(["pdftotext", str(paths[0]), "-"], capture_output=True, text=True).stdout

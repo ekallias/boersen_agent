@@ -342,34 +342,82 @@ def _chart_section(title, path, note=None):
     return [KeepTogether(parts)]
 
 
+def daily_actions(items: list[tuple]) -> list:
+    if not items:
+        return [P(_("No position actions flagged."), "small")]
+    rows = [[_("Position"), _("Action"), _("Why")]]
+    for suggestion, call, action_code in items[:8]:
+        confidence = call["confidence"] if call else suggestion.confidence
+        rationale = call["rationale"] if call else (
+            reason(suggestion.reasons[0]["text"]) if suggestion.reasons else "")
+        rule_action = call.get("rule_action", suggestion.action) if call else suggestion.action
+        action_label = f"{_(action(action_code))} · {confidence}"
+        if rule_action != action_code:
+            action_label += f" / {_('rule')} {_(action(rule_action))}"
+            if call.get("override_reason"):
+                rationale = call["override_reason"] + " " + rationale
+        if len(rationale) > 150:
+            rationale = rationale[:147].rsplit(" ", 1)[0] + "…"
+        rows.append([nice_name(suggestion.name), action_label, rationale])
+    out = [table(rows, [45 * mm, 27 * mm, W - 72 * mm])]
+    if len(items) > 8:
+        out.append(P(_("{count} more action(s) in the Markdown copy.")
+                     .format(count=len(items) - 8), "small"))
+    return out
+
+
 # ------------------------------------------------------------------ documents
 def daily(path: Path, ctx, analysis, ai_error, charts: dict, now) -> Path:
     iss = ctx.issue
-    calls = analysis.calls_by_key() if analysis else {}
     mine = [s for s in ctx.suggestions if s.in_portfolio]
+    items = daily_action_items(ctx, analysis)
     port = ctx.portfolio
     total = port["total_eur"] if port["total_eur"] is not None else port["known_total_eur"]
-    acts = [(calls.get(s.key) or {}).get("action", s.action) for s in mine]
-    alerts = sum(a in ("SELL", "REDUCE", "WATCH") for a in acts)
+    safe = ctx.market.safety_effective
+    regime = _("positive" if safe == 1 else "negative" if safe == -1 else "unknown")
     story = [band(_("Daily brief"), date_long(now),
                   (f"Börsensignale {iss['issue_key']}<br/>" + _("issue of {date}").format(date=date_short(iss['issue_date']))
                    if iss else _("no issue yet")))]
-    story += tiles([(_("Portfolio"), f"{_fmt(total, 0)} €", _("incomplete" if port["total_eur"] is None else "all positions priced"), None),
-                    (_("Equity share"), _fmt(port["equity_share"], 0, "%"), _("stocks + funds"), None)]
-                   + _regime_tiles(ctx.market)[:2]
-                   + [(_("Alerts"), str(alerts), _("sell / reduce / watch"), "#c02f2f" if alerts else "#0a7d0a")])
-    story += ai_block(analysis, ai_error)
-    story += h1(_("Your positions")) + (calls_table(mine, calls) if mine else [P(_("No portfolio imported yet."))])
-    story += lists_block(analysis)
-    story += h1(_("Portfolio"))
-    story += _chart_section("Allocation", charts.get("allocation")) + [Spacer(1, 4)] + portfolio_table(port)
-    story += _chart_section("Portfolio value", charts.get("value_history"))
-    story += _chart_section("Distance to the 9-month stop", charts.get("stop_distance"),
-                            "The newsletter's latest exit point is a weekly close below the 9-month low.")
-    story += _chart_section("Price vs. 9-month stop (completed weekly closes)", charts.get("price_vs_stop"))
-    story += [KeepTogether(h1(_("Market regime")) + tiles(_regime_tiles(ctx.market)))] + market_table(ctx.market, ctx.dashboard)
+    story += tiles([(_("Portfolio"), f"{_fmt(total, 0)} €",
+                     _("incomplete" if port["total_eur"] is None else "all positions priced"), None),
+                    (_("Equity share"), _fmt(port["equity_share"], 0, "%"), _("stocks + known fund exposure"), None),
+                    (_("Market regime"), regime, _("Sicherheitssystem"), None),
+                    (_("Actions"), str(len(items)), _("position actions"), "#c02f2f" if items else "#0a7d0a")])
+    if analysis is None:
+        story += [box(P(_("AI analysis unavailable: {err}. The tables show the rule engine's results only.")
+                        .format(err=ai_error or "disabled in config"), "warn"), OVERRIDE, CRIT)]
+    else:
+        headline = analysis.data["headline"]
+        if len(headline) > 140:
+            headline = headline[:137].rsplit(" ", 1)[0] + "…"
+        summary = analysis.data["summary"]
+        if len(summary) > 500:
+            summary = summary[:497].rsplit(" ", 1)[0] + "…"
+        story += [box([P(headline, "lead"), P(summary, "small")])]
+    story += h1(_("Action items")) + daily_actions(items)
+    unknown = port.get("unknown_allocation", [])
+    details = [f"{_('Value')}: {_fmt(total, 0)} €", f"{_('Positions')}: {len(mine)}"]
+    details += strategy_lines(port)
+    if unknown:
+        details.append(_("Fund composition unavailable: ") + ", ".join(nice_name(n) for n in unknown))
+    story += h1(_("Portfolio snapshot")) + [P(" · ".join(details), "small")]
+    score = ctx.market.gesamt_score
+    score_text = f"{score[0]}:{score[1]}" if score else "?"
+    market_note = f"Gesamtsystem {score_text} · "
+    market_note += f"Sicherheitssystem {regime} · "
+    market_note += _("strict summer exit") if ctx.market.safety_strict else _("seasonal market context only")
+    if iss:
+        market_note += f" · {_('Detailed issue analysis')}: {iss['issue_key']}"
+    story += h1(_("Market context")) + [P(market_note, "small")]
+    if ctx.notes:
+        notes = list(dict.fromkeys(ctx.notes))
+        note_text = "; ".join(notes[:2])
+        if len(note_text) > 260:
+            note_text = note_text[:257].rsplit(" ", 1)[0] + "…"
+        if len(notes) > 2:
+            note_text += f" (+{len(notes) - 2})"
+        story += [P(_("Data notes") + ": " + note_text, "small")]
     story += [P(_(DISCLAIMER) + " " + _("Prices typically delayed ~15 min."), "sub")]
-    story += appendix(mine, ctx.notes, analysis)
     return _build(path, f"Börsen-Agent {_('daily brief')} {date_short(now.date())}", story)
 
 

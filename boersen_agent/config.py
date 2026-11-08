@@ -75,6 +75,8 @@ class Config:
     ai_enabled: bool = True
     ai_mode: str = "api"                    # api: call Claude via the API | handoff: prepare/finish for a Claude session
     ai_model: str = "claude-opus-5-5"
+    ai_model_daily: str | None = None       # model for the daily brief; falls back to ai_model
+    ai_model_issue: str | None = None       # model for the issue report; falls back to ai_model
     ai_effort_daily: str = "medium"
     ai_effort_issue: str = "high"
     ai_max_tokens: int = 32000
@@ -195,6 +197,8 @@ def load(path: str | Path | None) -> Config:
         ai_enabled=bool(ai.get("enabled", True)),
         ai_mode=ai.get("mode", "api"),
         ai_model=ai.get("model", "claude-opus-5-5"),
+        ai_model_daily=ai.get("model_daily") or None,
+        ai_model_issue=ai.get("model_issue") or None,
         ai_effort_daily=ai.get("effort_daily", "medium"),
         ai_effort_issue=ai.get("effort_issue", "high"),
         ai_max_tokens=int(ai.get("max_tokens", 32000)),

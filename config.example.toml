@@ -75,7 +75,9 @@ history_years = 3
 enabled = true
 mode = "api"                    # api: call the Claude API | handoff: `prepare` + `finish` around a Claude Code
                                 # session that writes the analysis itself (docs/CLAUDE_CLOUD.md)
-model = "claude-opus-5-5"
+model = "claude-opus-5-5"          # fallback model
+model_daily = "claude-sonnet-5-5"  # daily brief (optional; defaults to model)
+model_issue = "claude-opus-5-5"    # issue report (optional; defaults to model)
 effort_daily = "medium"         # low | medium | high | xhigh | max
 effort_issue = "high"
 max_tokens = 32000

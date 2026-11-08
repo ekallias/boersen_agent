@@ -83,3 +83,14 @@ effort_issue = "high"
 max_tokens = 32000
 # base_url = "http://litellm:4000/anthropic"   # route through a LiteLLM gateway (or set ANTHROPIC_BASE_URL)
 server_fallbacks = true         # Anthropic re-runs a declined request on another model; set false if your gateway rejects it
+
+[email]
+# Every generated PDF report is e-mailed to these addresses (boersen_agent/mailer.py).
+# The password is read from the environment variable named in password_env.
+enabled = false
+smtp_host = "smtp.example.com"
+smtp_port = 587                       # 587: STARTTLS; 465: implicit TLS
+user = "you@example.com"
+from = "you@example.com"
+to = ["you@example.com"]
+password_env = "SMTP_PASSWORD"

@@ -88,6 +88,13 @@ class Config:
     high_risk_isins: list[str] = field(default_factory=list)
     fund_allocations: dict[str, dict[str, float]] = field(default_factory=dict)  # ISIN -> stock/bond/cash/other shares
     market_items: list[dict] = field(default_factory=lambda: [dict(i) for i in DEFAULT_MARKET_ITEMS])
+    email_enabled: bool = False
+    email_to: list[str] = field(default_factory=list)
+    email_from: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587                    # 587: STARTTLS; 465: implicit TLS
+    smtp_user: str | None = None
+    smtp_password: str | None = None        # read from the env var named by [email] password_env
 
     @property
     def db_path(self) -> Path:
@@ -180,6 +187,12 @@ def load(path: str | Path | None) -> Config:
         raise ValueError("strategy.targets must be non-negative and add up to 100")
     fund_allocations = _fund_allocations(raw.get("fund_allocations", {}))
     market_items = _market_items(raw.get("brief", {}).get("market_items"))
+    em = raw.get("email", {})
+    email_to = em.get("to", [])
+    if isinstance(email_to, str):
+        email_to = [email_to]
+    if not isinstance(email_to, list):
+        raise ValueError("email.to must be an address or a list of addresses")
     return Config(
         data_dir=rel(paths.get("data_dir", "data")),
         reports_dir=rel(paths.get("reports_dir", "reports")),
@@ -210,4 +223,11 @@ def load(path: str | Path | None) -> Config:
         high_risk_isins=[str(isin).upper() for isin in high_risk_isins],
         fund_allocations=fund_allocations,
         market_items=market_items,
+        email_enabled=bool(em.get("enabled", False)),
+        email_to=[str(x) for x in email_to],
+        email_from=em.get("from") or em.get("user"),
+        smtp_host=em.get("smtp_host"),
+        smtp_port=int(em.get("smtp_port", 587)),
+        smtp_user=em.get("user"),
+        smtp_password=os.environ.get(em.get("password_env", "SMTP_PASSWORD")),
     )

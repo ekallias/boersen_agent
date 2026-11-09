@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from . import brief, charts, pdfreport, report, weekly
+from . import brief, charts, mailer, pdfreport, report, weekly
 from . import rules as R
 from .i18n import _, num
 from .names import nice_name
@@ -389,6 +389,11 @@ class Agent:
                 self.paperless.upload_document(pdf, title=title, tags=self.cfg.report_tags or None)
             except Exception as e:  # noqa: BLE001
                 self.notes.append(f"upload to Paperless failed: {e}")
+        if self.cfg.email_enabled:
+            try:
+                mailer.send_report(self.cfg, pdf, title)
+            except Exception as e:  # noqa: BLE001
+                self.notes.append(f"e-mail failed: {e}")
 
     def _issue_pdf_path(self, issue_key: str) -> Path | None:
         r = self.store.db.execute("SELECT doc_id FROM issues WHERE issue_key=?", (issue_key,)).fetchone()

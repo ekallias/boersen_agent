@@ -111,6 +111,22 @@ class BrokerImportTests(unittest.TestCase):
         self.assertEqual(v["strategy"]["unclassified_pct"], 100)
         self.assertFalse(v["strategy"]["complete"])
 
+    def test_fund_stock_share_is_diversified_and_weighted_in_stock_quota(self):
+        from types import SimpleNamespace
+
+        from boersen_agent.portfolio import Holding, valuation
+        fund = Holding("FUND", "IE0000000001", "FUND", "Index fund", 1, 100, "EUR", "2026-01-01", asset="fund")
+        stock = Holding("STOCK", "US0000000002", "STOCK", "Other stock", 1, 100, "EUR", "2026-01-01")
+        market = SimpleNamespace(quote=lambda s: SimpleNamespace(price=100.0, currency="EUR"))
+        cfg = SimpleNamespace(symbols={}, high_risk_isins=[], diversified_weight=0.5,
+                              strategy_targets={"high_risk": 10, "stocks": 40, "safe": 50})
+        alloc = {"FUND": {"stock": 0.8, "bond": 0.2, "cash": 0.0, "other": 0.0}}
+        v = valuation([fund, stock], market, cfg, lambda h: (h.symbol, True), alloc)
+        act = v["strategy"]["actual_pct"]
+        self.assertAlmostEqual(act["diversified"], 40.0)     # 80 of 200 EUR is fund stock exposure
+        self.assertAlmostEqual(act["stocks_direct"], 50.0)   # 100 of 200 EUR is single stocks
+        self.assertAlmostEqual(act["stocks"], 70.0)          # 50 single + half of 40 fund
+
     def test_strategy_separates_configured_high_risk_positions(self):
         from types import SimpleNamespace
 
@@ -123,4 +139,5 @@ class BrokerImportTests(unittest.TestCase):
         v = valuation([high_risk, stock], market, cfg, lambda h: (h.symbol, True))
         self.assertEqual(v["asset_exposure_eur"]["high_risk"], 100)
         self.assertEqual(v["asset_exposure_eur"]["stocks"], 100)
-        self.assertEqual(v["strategy"]["actual_pct"], {"high_risk": 50, "stocks": 50, "safe": 0.0})
+        self.assertEqual(v["strategy"]["actual_pct"],
+                         {"high_risk": 50, "stocks": 50, "safe": 0.0, "stocks_direct": 50, "diversified": 0.0})

@@ -1,3 +1,4 @@
 anthropic>=2.5,<3
 matplotlib>=3.8
 reportlab>=4
+pypdf>=4

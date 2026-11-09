@@ -134,6 +134,10 @@ def strategy_lines(port) -> list[str]:
             drift = strategy["drift_pct"].get(key)
             delta = f" ({'+' if drift > 0 else ''}{_fmt(drift, 1, ' pp')})" if drift is not None else ""
             items.append(f"{labels.get(key, key)} {_fmt(actual, 1, '%')} / {_fmt(target, 1, '%')} target{delta}")
+    diversified = strategy["actual_pct"].get("diversified")
+    if diversified is not None:
+        w = strategy.get("diversified_weight", 0.5) * 100
+        items.append(f"{_('Diversified (funds)')} {_fmt(diversified, 1, '%')} ({_('counted at')} {w:.0f} %)")
     unclassified = strategy.get("unclassified_pct")
     if unclassified:
         items.append(f"{_('Unclassified')} {_fmt(unclassified, 1, '%')}")

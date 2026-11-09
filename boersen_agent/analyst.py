@@ -101,6 +101,25 @@ SCHEMA = {
         "risks": {"type": "array", "items": {"type": "string"}},
         "questions_for_user": {"type": "array", "items": {"type": "string"}},
         "notes_for_next_run": {"type": "string"},
+        "newsletter_summary": {
+            "type": "array", "items": {"type": "string"},
+            "description": "issue reports only (else empty): 6-10 short bullets summarising the newsletter's text on "
+                           "pages 1-4 (market view, indicators, main recommendations); only what the newsletter says"},
+        "company_profiles": {
+            "type": "array",
+            "description": "issue reports only (else empty): one entry per key in new_ideas and newsletter_picks with "
+                           "action BUY, ADD or WATCH, and per position_call with action BUY, ADD or WATCH",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "profile": {"type": "string", "description": "3-4 sentences: what the company does, why it is "
+                                "on the list, the main risk; no recent news or prices"},
+                },
+                "required": ["key", "profile"],
+                "additionalProperties": False,
+            },
+        },
         "market_news": {
             "type": "array",
             "description": "the 3-5 most important market news items for today's market, with what to watch for",
@@ -117,7 +136,7 @@ SCHEMA = {
         },
     },
     "required": ["headline", "summary", "market_view", "position_calls", "newsletter_picks", "new_ideas",
-                 "risks", "questions_for_user", "notes_for_next_run"],
+                 "risks", "questions_for_user", "notes_for_next_run", "newsletter_summary", "company_profiles"],
     "additionalProperties": False,
 }
 
@@ -266,7 +285,8 @@ def analyse(facts: dict, *, model: str, effort: str, pdf: Path | None = None, cl
                         "source": {"type": "base64", "media_type": "application/pdf",
                                    "data": base64.standard_b64encode(Path(pdf).read_bytes()).decode()}})
     task = ("Write the biweekly issue report: read the attached issue, check its recommendations against "
-            "the live facts, and apply it to the portfolio." if facts["scope"] == "issue" else
+            "the live facts, and apply it to the portfolio. Also fill newsletter_summary (the newsletter's first four "
+            "pages) and company_profiles as the schema describes." if facts["scope"] == "issue" else
             "Write a concise one-page daily brief. Lead with any position that needs action; avoid repeating "
             "the detailed newsletter analysis, list only material risks, and use at most two short sentences "
             "for the summary.")

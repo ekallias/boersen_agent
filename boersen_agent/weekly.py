@@ -138,6 +138,12 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
             page1.append(_h2(_("Market news: what to watch")) + items)
     else:
         page1.append(f"<div class='view warn'>{esc(_('AI analysis unavailable: {err}. The tables show the rule engine\'s results only.').format(err=ai_error or 'disabled in config'))}</div>")
+    conc = figs.get("conclusion")
+    if conc:
+        page1.append(
+            _h2(_("Newsletter conclusion") + f" · {conc['issue']} · p. {conc['page']}")
+            + (f"<h3>{esc(conc['heading'])}</h3>" if conc.get("heading") else "")
+            + f"<p class='body' style='font-size: 11.5px; line-height: 1.4'>{esc(conc['paragraph'])}</p>")
     body1 = "".join(page1)
 
     # --- your portfolio against this issue
@@ -207,9 +213,9 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
 
     p1 = _page(body1)
     stock_series = figs.get("stock_series") or []
-    buy_block = _buy_sections(stock_series, (d or {}).get("stock_profiles") or {})
+    buy_block = _buy_sections(stock_series, _profiles(d))
     p2 = _page(portfolio_block + picks_block)
-    idea_block = _buy_sections(figs.get("idea_series") or [], (d or {}).get("stock_profiles") or {},
+    idea_block = _buy_sections(figs.get("idea_series") or [], _profiles(d),
                                heading=_("New ideas in detail"), action_code="WATCH")
     p3 = _page(buy_block + ideas_block + idea_block + rq + changes_block)
 
@@ -255,7 +261,7 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
     portfolio_tbl = (_h2(_("Portfolio")) + _table([_("Position"), _("Type"), _("Qty"), _("Price"), _("Value €"), _("P/L")],
                                                   prow, [34, 12, 12, 16, 16, 10]))
     notes_html = "".join(f"<p class='note'>{esc(n)}</p>" for n in (port.get("notes") or []))
-    p6 = _page(regime + portfolio_tbl + notes_html)
+    p6 = _page(_strategy_block(port) + regime + portfolio_tbl + notes_html)
 
     # --- appendix and data notes
     appendix_parts = [_h2(_("Appendix: rule details per security"))]
@@ -290,6 +296,47 @@ ACTION_COLOUR = {"SELL": RED, "REDUCE": RED, "REVIEW": AMBER, "WATCH": NAVY, "BU
                  "HOLD": MUTED}
 
 
+def _profiles(d: dict | None) -> dict:
+    """company_profiles from the AI analysis, keyed by security key: {key: {"profile": text}}."""
+    return {p["key"]: p for p in (d or {}).get("company_profiles") or [] if p.get("key")}
+
+
+def _strategy_block(port) -> str:
+    """Allocation against the strategy targets, with the diversified (fund) stock share shown separately."""
+    strat = port.get("strategy") or {}
+    if not strat:
+        return ""
+    act, drift, tg = strat.get("actual_pct") or {}, strat.get("drift_pct") or {}, strat.get("targets_pct") or {}
+    w = strat.get("diversified_weight", 0.5)
+
+    def f(v):
+        return "–" if v is None else num(v, 1, "%")
+
+    def dr(v):
+        return "–" if v is None else f"{'+' if v > 0 else ''}{num(v, 1, ' pp')}"
+
+    rows = [[esc(_("High risk")), f(act.get("high_risk")), f(tg.get("high_risk")), dr(drift.get("high_risk"))],
+            [esc(_("Single stocks")), f(act.get("stocks_direct")), "–", "–"],
+            [esc(_("Diversified funds / ETFs (stock share)")), f(act.get("diversified")), "–", "–"],
+            [f"<b>{esc(_('Stock quota (risk-weighted)'))}</b>", f"<b>{f(act.get('stocks'))}</b>",
+             f(tg.get("stocks")), dr(drift.get("stocks"))],
+            [esc(_("Safe")), f(act.get("safe")), f(tg.get("safe")), dr(drift.get("safe"))],
+            [esc(_("Unclassified")), f(strat.get("unclassified_pct")), "–", "–"]]
+    out = [_h2(_("Strategy allocation and diversified stocks")),
+           _table([_("Bucket"), _("Actual"), _("Target"), _("Drift")], rows, [46, 18, 18, 18]),
+           f"<p class='note'>{esc(_('Funds’ stock share counts at {w} % in the stock quota: their diversification makes them less risky than single stocks.').format(w=num(w * 100, 0)))}</p>"]
+    funds = [r for r in port.get("rows", []) if r.get("asset") == "fund" and r.get("exposure_eur") and r.get("value_eur")]
+    if funds:
+        frows = []
+        for r in sorted(funds, key=lambda x: -x["value_eur"]):
+            share = r["exposure_eur"]["diversified"] / r["value_eur"] * 100
+            frows.append([esc(nice_name(r["name"])), num(r["value_eur"], 0), f(share),
+                          num(r["exposure_eur"]["diversified"] * w, 0)])
+        out.append(_table([_("Fund"), _("Value €"), _("Stock share"), _("Counted in stock quota €")], frows,
+                          [44, 16, 16, 24]))
+    return "".join(out)
+
+
 def _buy_sections(series: list[dict], profiles: dict, heading: str | None = None, action_code: str = "BUY") -> str:
     """One section per stock with the given AI call (BUY for purchases, WATCH for new ideas): chart, profile,
     and fit in the strategy."""
@@ -300,7 +347,7 @@ def _buy_sections(series: list[dict], profiles: dict, heading: str | None = None
     for s in items:
         profile = (profiles.get(s.get("key")) or {}).get("profile", "")
         if s.get("closes"):
-            svg = sparkline(s["closes"], s["stops"], s.get("today"), colour=GREEN, w=700, h=230, pad=10,
+            svg = sparkline(s["closes"], s["stops"], s.get("today"), colour=GREEN, w=700, h=230, pad=10, dates=s.get("dates"), averages=s.get("averages"),
                             label=s["name"])
         else:
             svg = f"<p class='note'>{esc(_('No price chart: no market symbol'))}</p>"
@@ -343,7 +390,7 @@ def _price_cards(series: list[dict]) -> str:
     cards = []
     for s in series:
         colour = ACTION_COLOUR.get((s.get("action") or "").upper(), NAVY)
-        svg = sparkline(s["closes"], s["stops"], s.get("today"), colour=colour, w=330, h=120, pad=7, label=s["name"])
+        svg = sparkline(s["closes"], s["stops"], s.get("today"), colour=colour, w=330, h=120, pad=7, label=s["name"], dates=s.get("dates"))
         cards.append(f"<div class='pcard'><div class='ph'><span class='pn'>{esc(s['name'])}</span>"
                      f"{_tag(s.get('action'))}</div>{svg}<div class='pc'>{esc(s.get('caption') or '')}</div></div>")
     return "<div class='pgrid'>" + "".join(cards) + "</div>"

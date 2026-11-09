@@ -61,7 +61,7 @@ def price_svg(closes, stops, *, dates=None, today=None, colour=NAVY, w=230, h=54
         return ""
     big = (w >= 600) if big is None else big
     left, right = (46, 66) if big else (34, 48)
-    top, bottom = (12, 22) if big else (6, 15)
+    top, bottom = (22, 22) if big else (6, 15)
     ahead = 2 if today is not None else 0
     avgs = {k: v for k, v in (averages or {}).items() if big and k in ("ma10", "ma39") and len(v) == n}
     values = list(closes) + list(stops) + ([today] if today is not None else [])
@@ -139,9 +139,9 @@ def price_svg(closes, stops, *, dates=None, today=None, colour=NAVY, w=230, h=54
                          f'fill="{MUTED}">{_esc(text)}</text>')
     # legend for the averages
     if avgs:
-        parts.append(f'<text x="{left + 6}" y="{top + 9}" font-size="{fs}" fill="{AMBER}">'
+        parts.append(f'<text x="{left + 6}" y="{top - 11}" font-size="{fs}" fill="{AMBER}">'
                      f'— {MA_SHORT} W avg</text>')
-        parts.append(f'<text x="{left + 80}" y="{top + 9}" font-size="{fs}" fill="{TEAL}">'
+        parts.append(f'<text x="{left + 80}" y="{top - 11}" font-size="{fs}" fill="{TEAL}">'
                      f'— {MA_LONG} W avg</text>')
     parts.append("</svg>")
     return "".join(parts)

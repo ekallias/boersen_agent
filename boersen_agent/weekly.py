@@ -48,8 +48,9 @@ def _pct(v, nd=1) -> str:
     return "–" if v is None else num(v, nd, "%")
 
 
-def _page(body: str, new_page: bool = False) -> str:
-    cls = "page newpage" if new_page else "page"
+def _page(body: str, cont: bool = False) -> str:
+    """One report page; `cont` lets it follow the previous page's content instead of starting a new sheet."""
+    cls = "page cont" if cont else "page"
     return f'<section class="{cls}">{body}</section>'
 
 
@@ -177,9 +178,9 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
                      _tag(s.action, s.confidence),
                      f"<span style='color:{rc};font-weight:600'>{esc(rec)}</span><br><span style='color:{vcol}'>{esc(check)}</span>",
                      why])
-    picks_block = _h2(_("Newsletter recommendations, checked")) + f"<p class='note'>{esc(_('Newsletter = the issue\'s buy / hold / sell, with the AI analyst\'s verdict (confirmed · questionable · contradicted), or the scripts\' live check when there is no AI analysis.'))}</p>" + (
+    picks_block = "<div class='newsheet'>" + _h2(_("Newsletter recommendations, checked")) + f"<p class='note h2note'>{esc(_('Newsletter = the issue\'s buy / hold / sell, with the AI analyst\'s verdict (confirmed · questionable · contradicted), or the scripts\' live check when there is no AI analysis.'))}</p>" + (
         _table([_("Security"), _("AI call"), _("Rules"), _("Newsletter"), _("Rationale")], rows, [20, 13, 13, 16, 38])
-        if rows else f"<p class='body'>{esc(_('All of this issue\'s recommendations are in your portfolio (see above).'))}</p>")
+        if rows else f"<p class='body'>{esc(_('All of this issue\'s recommendations are in your portfolio (see above).'))}</p>") + "</div>"
 
     # --- new ideas
     rows = []
@@ -231,10 +232,10 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
     chart_parts.append(_svg_figure(svgcharts.scatter_svg(**sc) if sc else "", _("Stock list: relative strength vs. KUV"),
                                    _("Buy candidates sit right of the top-200 line and below the KUV line.")))
     chart_parts.append(_alloc_bars(ctx))
-    p4 = _page("".join(chart_parts), new_page=True)
+    p4 = _page("".join(chart_parts))
     p5 = _page(_h2(_("Price charts: stocks labelled SELL, REDUCE, REVIEW or BUY"))
                + "<p class='note'>" + esc(_("Weekly closes over the last year. The dashed line is the rolling 9-month stop (39 weeks).")) + "</p>"
-               + _price_cards(stock_series))
+               + _price_cards(stock_series), cont=True)
 
     # --- regime and portfolio
     reg_rows = []
@@ -258,8 +259,8 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
         pnl_cell = "–" if pnl is None else f"<span style='color:{GREEN if pnl >= 0 else RED}'>{num(pnl, 1, '%')}</span>"
         prow.append([esc(nice_name(r["name"])), esc(_(r["asset"])), num(q, 0 if q == int(q) else 2),
                      f"{num(r['price'], 2)} {esc(r['currency'] or '')}", num(r["value_eur"], 2), pnl_cell])
-    portfolio_tbl = (_h2(_("Portfolio")) + _table([_("Position"), _("Type"), _("Qty"), _("Price"), _("Value €"), _("P/L")],
-                                                  prow, [34, 12, 12, 16, 16, 10]))
+    portfolio_tbl = ("<div class='keep'>" + _h2(_("Portfolio")) + _table(
+        [_("Position"), _("Type"), _("Qty"), _("Price"), _("Value €"), _("P/L")], prow, [34, 12, 12, 16, 16, 10]) + "</div>")
     notes_html = "".join(f"<p class='note'>{esc(n)}</p>" for n in (port.get("notes") or []))
     p6 = _page(_strategy_block(port) + regime + portfolio_tbl + notes_html)
 
@@ -282,7 +283,7 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
                               + (f" · guardrail notes: {esc('; '.join(analysis.warnings))}" if analysis.warnings else "")
                               + "</p>")
     appendix_parts.append(f"<p class='disc'>{esc(_(disclaimer))}</p>")
-    p7 = _page("".join(appendix_parts), new_page=True)
+    p7 = _page("".join(appendix_parts), cont=True)
 
     doc = _document(f"Börsensignale {iss['issue_key']}", "".join([p1, p2, p3, p4, p5, p6, p7]))
     html_path = path.with_suffix(".html")
@@ -347,7 +348,7 @@ def _buy_sections(series: list[dict], profiles: dict, heading: str | None = None
     for s in items:
         profile = (profiles.get(s.get("key")) or {}).get("profile", "")
         if s.get("closes"):
-            svg = sparkline(s["closes"], s["stops"], s.get("today"), colour=GREEN, w=700, h=230, pad=10, dates=s.get("dates"), averages=s.get("averages"),
+            svg = sparkline(s["closes"], s["stops"], s.get("today"), colour=GREEN, w=700, h=195, pad=10, dates=s.get("dates"), averages=s.get("averages"),
                             label=s["name"])
         else:
             svg = f"<p class='note'>{esc(_('No price chart: no market symbol'))}</p>"
@@ -420,11 +421,17 @@ def _document(title: str, body: str) -> str:
 @page {{ size: A4; margin: 0 }}
 html, body {{ margin: 0; background: {PAPER}; color: {INK}; font-family: {SANS}; font-size: 13.4px; line-height: 1.45;
   -webkit-print-color-adjust: exact; print-color-adjust: exact }}
-.page {{ box-sizing: border-box; width: 210mm; padding: 26mm 14mm 14mm; position: relative }}
-.newpage {{ page-break-before: always }}
+.page {{ box-sizing: border-box; position: relative; break-before: page }}
+.page:first-child {{ break-before: auto; padding-top: 12mm }}
+.page.cont {{ break-before: auto }}
+table.sheet {{ width: 210mm; margin: 0; border-collapse: collapse; font-size: inherit }}
+table.sheet > thead > tr > td, table.sheet > tfoot > tr > td {{ height: 14mm; padding: 0; border: 0 }}
+table.sheet > tbody > tr > td.sheetbody {{ padding: 0 14mm; border: 0; vertical-align: top }}
+.keep, .two {{ break-inside: avoid }}
+.h2note {{ break-after: avoid }} .newsheet {{ break-before: page }}
 h2, h3 {{ break-after: avoid }}
 .figure, .pcard, .appx, .news, .chg, .view, .buy {{ break-inside: avoid }}
-.buy {{ margin-bottom: 14px }} .pn.big {{ font-size: 15px }} .buy ul {{ font-size: 11px }}
+.buy {{ margin-bottom: 14px; display: flow-root; break-inside: avoid-page }} .pn.big {{ font-size: 15px }} .buy ul {{ font-size: 11px }}
 .kpis, .lead {{ break-after: avoid }}
 h1 {{ margin: 2px 0 4px; font-family: {SERIF}; font-weight: 500; font-size: 38.4px; line-height: 1.1 }}
 h2 {{ margin: 14px 0 6px; font-family: {SERIF}; font-weight: 500; font-size: 21.8px; border-bottom: 1.5px solid {INK}; padding-bottom: 4px }}
@@ -450,7 +457,7 @@ h3 {{ margin: 8px 0 2px; font-family: {SERIF}; font-weight: 500; font-size: 16.6
 table {{ width: 100%; border-collapse: collapse; font-size: 12.2px; margin-bottom: 4px }}
 th {{ text-align: left; font-size: 9.6px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: {MUTED};
   border-bottom: 1px solid {INK}; padding: 4px 4px 4px 0 }}
-td {{ border-bottom: 1px solid {RULE}; padding: 5px 4px 5px 0; vertical-align: top }}
+td {{ border-bottom: 1px solid {RULE}; padding: 3.5px 4px 3.5px 0; vertical-align: top }}
 tr {{ page-break-inside: avoid }}
 .tag {{ display: inline-block; padding: 2px 6px; font-size: 10.2px; font-weight: 600; letter-spacing: .08em }}
 .conf {{ color: {MUTED}; font-size: 10.2px }}
@@ -473,4 +480,5 @@ ul {{ margin: 2px 0 6px; padding-left: 14px }} li {{ margin: 0 0 3px }}
 .ah {{ margin-bottom: 2px }} .sym {{ color: {MUTED}; font-size: 10.9px; margin-left: 4px }}
 .appx ul {{ font-size: 10.9px }}
 .disc {{ font-size: 10.9px; color: {MUTED}; margin-top: 12px }}
-</style></head><body>{body}</body></html>"""
+</style></head><body><table class='sheet'><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot>
+<tbody><tr><td class='sheetbody'>{body}</td></tr></tbody></table></body></html>"""

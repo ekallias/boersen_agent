@@ -70,3 +70,27 @@ sensible reading order. Content and rules stay as they are.
 ## Log
 
 - 2026-11-09: task written. Not started.
+- 2026-11-09 (layout session, branch `report-layout`): done. Changed `boersen_agent/weekly.py` (CSS and page
+  structure) and `boersen_agent/pricechart.py` (legend position). Nothing else touched.
+  - Page margins now come from repeating spacer rows (thead/tfoot of a wrapper table, 14 mm) with
+    `@page margin: 0`, so the paper tint stays full-bleed and continuation pages keep the same margins as
+    page 1 (page 1 keeps its 26 mm top, so the Fazit still fits on page 1). Before, `.page` only had
+    padding, so a section that ran over lost its top margin.
+  - Every `.page` starts on a new sheet; the price-chart page and the appendix follow on from the previous
+    content (`cont`) instead of leaving half-empty pages. 17 pages became 15.
+  - The newsletter-picks table starts on its own sheet with its heading (no orphaned heading at the foot of
+    page 2). Risks/questions and the portfolio table (`.keep`, `.two`) no longer split across pages. Buy
+    cards (`.buy`) no longer split; table rows are a little tighter (3.5 px).
+  - Buy price charts 700x195 (was 230 high) so two cards fit per page. On big price cards the moving-average
+    legend sits above the plot (it used to sit on the price line); right-hand H/L labels, y-scale and date
+    labels checked at 130 dpi, none clipped.
+  - Same content: only CSS, wrapper markup and chart size changed. Section headings and figures are
+    unchanged (compared page by page).
+  - Tests: all of `tests/test_agent.py` that renders a report errors with `AttributeError: 'Agent' object has
+    no attribute 'CHARTED_ACTIONS'`. This is NOT from this change: commit fa8e3aa removed the constant from
+    `agent.py` but `_stock_series` and `_stock_charts` still use it, so the real pipeline (`finish`/`run`)
+    crashes at the moment. Fix (one line, in the planning session's file): re-add
+    `CHARTED_ACTIONS = ("SELL", "REDUCE", "REVIEW", "BUY")` to class `Agent`. I rendered with the constant
+    injected from a test script, no e-mail, no API.
+  - Open: the pdf of page 10 starts mid-grid (price cards continue from page 9 under their heading); the
+    appendix is long (3 pages); no change to content was made.

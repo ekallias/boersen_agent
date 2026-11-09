@@ -48,8 +48,9 @@ def _pct(v, nd=1) -> str:
     return "–" if v is None else num(v, nd, "%")
 
 
-def _page(body: str) -> str:
-    return f'<section class="page">{body}</section>'
+def _page(body: str, new_page: bool = False) -> str:
+    cls = "page newpage" if new_page else "page"
+    return f'<section class="{cls}">{body}</section>'
 
 
 def _h2(text: str, cls: str = "") -> str:
@@ -205,8 +206,12 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
     changes_block = _h2(_("Changes since the previous issue")) + f"<div class='two'><div>{col(ch_items[:half])}</div><div>{col(ch_items[half:])}</div></div>"
 
     p1 = _page(body1)
+    stock_series = figs.get("stock_series") or []
+    buy_block = _buy_sections(stock_series, (d or {}).get("stock_profiles") or {})
     p2 = _page(portfolio_block + picks_block)
-    p3 = _page(ideas_block + rq + changes_block)
+    idea_block = _buy_sections(figs.get("idea_series") or [], (d or {}).get("stock_profiles") or {},
+                               heading=_("New ideas in detail"), action_code="WATCH")
+    p3 = _page(buy_block + ideas_block + idea_block + rq + changes_block)
 
     # --- charts
     stock_series = figs.get("stock_series") or []
@@ -220,7 +225,7 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
     chart_parts.append(_svg_figure(svgcharts.scatter_svg(**sc) if sc else "", _("Stock list: relative strength vs. KUV"),
                                    _("Buy candidates sit right of the top-200 line and below the KUV line.")))
     chart_parts.append(_alloc_bars(ctx))
-    p4 = _page("".join(chart_parts))
+    p4 = _page("".join(chart_parts), new_page=True)
     p5 = _page(_h2(_("Price charts: stocks labelled SELL, REDUCE, REVIEW or BUY"))
                + "<p class='note'>" + esc(_("Weekly closes over the last year. The dashed line is the rolling 9-month stop (39 weeks).")) + "</p>"
                + _price_cards(stock_series))
@@ -271,7 +276,7 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
                               + (f" · guardrail notes: {esc('; '.join(analysis.warnings))}" if analysis.warnings else "")
                               + "</p>")
     appendix_parts.append(f"<p class='disc'>{esc(_(disclaimer))}</p>")
-    p7 = _page("".join(appendix_parts))
+    p7 = _page("".join(appendix_parts), new_page=True)
 
     doc = _document(f"Börsensignale {iss['issue_key']}", "".join([p1, p2, p3, p4, p5, p6, p7]))
     html_path = path.with_suffix(".html")
@@ -283,6 +288,45 @@ def render_issue(ctx, analysis, ai_error, now, changes: list[str], figs: dict, n
 
 ACTION_COLOUR = {"SELL": RED, "REDUCE": RED, "REVIEW": AMBER, "WATCH": NAVY, "BUY": GREEN, "ADD": GREEN,
                  "HOLD": MUTED}
+
+
+def _buy_sections(series: list[dict], profiles: dict, heading: str | None = None, action_code: str = "BUY") -> str:
+    """One section per stock with the given AI call (BUY for purchases, WATCH for new ideas): chart, profile,
+    and fit in the strategy."""
+    items = [s for s in series if (s.get("action") or "").upper() == action_code]
+    if not items:
+        return ""
+    out = [_h2(heading or _("Purchase recommendations in detail"))]
+    for s in items:
+        profile = (profiles.get(s.get("key")) or {}).get("profile", "")
+        if s.get("closes"):
+            svg = sparkline(s["closes"], s["stops"], s.get("today"), colour=GREEN, w=700, h=230, pad=10,
+                            label=s["name"])
+        else:
+            svg = f"<p class='note'>{esc(_('No price chart: no market symbol'))}</p>"
+        fit = []
+        share, target = s.get("stock_share"), s.get("stock_target")
+        if share is not None and target is not None:
+            fit.append(_("Stock share today {a} % against a target of {t} %").format(a=num(share, 0), t=num(target, 0)))
+            fit.append(_("A purchase would raise the stock share further above target; the strategy argues against more stocks while it is above target.")
+                       if share > target else
+                       _("There is room in the stock target; a purchase fits the target allocation."))
+        fit.append(_("Included in the BS Best fund (estimated from the Dispo-Liste)") if s.get("in_fund")
+                   else _("Not part of the BS Best fund (no Dispo recommendation)"))
+        fit.append(_("Rules: {rule} ({rc}); AI call: {ai}").format(
+            rule=action(s.get("rule_action")), rc=s.get("rule_confidence"), ai=action(s["action"])))
+        numbers = " · ".join(x for x in (
+            f"RS {num(s['rs'], 0)}" if s.get("rs") is not None else "",
+            f"KUV {num(s['kuv'], 2)}" if s.get("kuv") is not None else "",
+            f"KBV {num(s['kbv'], 2)}" if s.get("kbv") is not None else "") if x)
+        out.append(
+            f"<div class='buy'><div class='ph'><span class='pn big'>{esc(s['name'])}</span>{_tag(s['action'])}</div>"
+            f"{svg}<div class='pc'>{esc(s.get('caption') or '')}</div>"
+            f"<h3>{esc(_('Profile'))}</h3><p class='body'>{esc(profile or _('No profile yet'))}</p>"
+            f"<h3>{esc(_('Fit in the investment strategy'))}</h3><ul>"
+            + "".join(f"<li>{esc(x)}</li>" for x in fit) + "</ul>"
+            + (f"<p class='note'>{esc(numbers)}</p>" if numbers else "") + "</div>")
+    return "".join(out)
 
 
 def _svg_figure(svg: str, caption: str, note: str | None = None) -> str:
@@ -327,55 +371,59 @@ def _document(title: str, body: str) -> str:
 <html><head><meta charset="utf-8"><title>{esc(title)}</title>
 <style>
 @page {{ size: A4; margin: 0 }}
-html, body {{ margin: 0; background: {PAPER}; color: {INK}; font-family: {SANS}; font-size: 10.5px; line-height: 1.45;
+html, body {{ margin: 0; background: {PAPER}; color: {INK}; font-family: {SANS}; font-size: 13.4px; line-height: 1.45;
   -webkit-print-color-adjust: exact; print-color-adjust: exact }}
-.page {{ box-sizing: border-box; width: 210mm; min-height: 297mm; padding: 14mm; page-break-after: always; position: relative }}
-.page:last-child {{ page-break-after: auto }}
-h1 {{ margin: 2px 0 4px; font-family: {SERIF}; font-weight: 500; font-size: 30px; line-height: 1.1 }}
-h2 {{ margin: 14px 0 6px; font-family: {SERIF}; font-weight: 500; font-size: 17px; border-bottom: 1.5px solid {INK}; padding-bottom: 4px }}
+.page {{ box-sizing: border-box; width: 210mm; padding: 26mm 14mm 14mm; position: relative }}
+.newpage {{ page-break-before: always }}
+h2, h3 {{ break-after: avoid }}
+.figure, .pcard, .appx, .news, .chg, .view, .buy {{ break-inside: avoid }}
+.buy {{ margin-bottom: 14px }} .pn.big {{ font-size: 15px }} .buy ul {{ font-size: 11px }}
+.kpis, .lead {{ break-after: avoid }}
+h1 {{ margin: 2px 0 4px; font-family: {SERIF}; font-weight: 500; font-size: 38.4px; line-height: 1.1 }}
+h2 {{ margin: 14px 0 6px; font-family: {SERIF}; font-weight: 500; font-size: 21.8px; border-bottom: 1.5px solid {INK}; padding-bottom: 4px }}
 h2.first {{ margin-top: 0 }}
-h3 {{ margin: 8px 0 2px; font-family: {SERIF}; font-weight: 500; font-size: 13px }}
+h3 {{ margin: 8px 0 2px; font-family: {SERIF}; font-weight: 500; font-size: 16.6px }}
 .band {{ display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1.5px solid {INK}; padding-bottom: 8px }}
-.eyebrow {{ font-size: 8.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: {MUTED} }}
-.sub {{ color: {MUTED}; font-size: 11px }}
-.gen {{ text-align: right; font-size: 9px; color: {MUTED} }}
-.genv {{ font-family: {SERIF}; font-size: 13px; color: {INK} }}
+.eyebrow {{ font-size: 10.9px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: {MUTED} }}
+.sub {{ color: {MUTED}; font-size: 14.1px }}
+.gen {{ text-align: right; font-size: 11.5px; color: {MUTED} }}
+.genv {{ font-family: {SERIF}; font-size: 16.6px; color: {INK} }}
 .kpis {{ display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid {RULE}; padding: 10px 0 12px }}
 .kpi {{ padding: 0 10px; border-right: 1px solid {RULE} }}
 .kpi:first-child {{ padding-left: 0 }} .kpi:last-child {{ border-right: 0 }}
-.kl {{ font-size: 8px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: {MUTED} }}
-.kv {{ font-family: {SERIF}; font-size: 24px; line-height: 1.1; margin: 2px 0 1px }}
-.ks {{ font-size: 9px; color: {MUTED} }}
-.lead {{ font-family: {SERIF}; font-size: 17px; line-height: 1.3; margin: 12px 0 6px }}
-.body {{ margin: 0 0 6px; font-size: 11px; color: {BODY} }}
-.view {{ background: #ECE8DC; padding: 8px 10px; margin: 8px 0; font-size: 10px }}
+.kl {{ font-size: 10.2px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: {MUTED} }}
+.kv {{ font-family: {SERIF}; font-size: 30.7px; line-height: 1.1; margin: 2px 0 1px }}
+.ks {{ font-size: 11.5px; color: {MUTED} }}
+.lead {{ font-family: {SERIF}; font-size: 21.8px; line-height: 1.3; margin: 12px 0 6px }}
+.body {{ margin: 0 0 6px; font-size: 14.1px; color: {BODY} }}
+.view {{ background: #ECE8DC; padding: 8px 10px; margin: 8px 0; font-size: 12.8px }}
 .warn {{ color: {RED} }}
 .news {{ border-bottom: 1px solid {RULE}; padding: 6px 0 }}
 .nt {{ font-weight: 600 }} .nb {{ color: {BODY} }} .nw {{ color: {NAVY}; font-weight: 500 }}
-table {{ width: 100%; border-collapse: collapse; font-size: 9.5px; margin-bottom: 4px }}
-th {{ text-align: left; font-size: 7.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: {MUTED};
+table {{ width: 100%; border-collapse: collapse; font-size: 12.2px; margin-bottom: 4px }}
+th {{ text-align: left; font-size: 9.6px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: {MUTED};
   border-bottom: 1px solid {INK}; padding: 4px 4px 4px 0 }}
 td {{ border-bottom: 1px solid {RULE}; padding: 5px 4px 5px 0; vertical-align: top }}
 tr {{ page-break-inside: avoid }}
-.tag {{ display: inline-block; padding: 2px 6px; font-size: 8px; font-weight: 600; letter-spacing: .08em }}
-.conf {{ color: {MUTED}; font-size: 8px }}
+.tag {{ display: inline-block; padding: 2px 6px; font-size: 10.2px; font-weight: 600; letter-spacing: .08em }}
+.conf {{ color: {MUTED}; font-size: 10.2px }}
 .warnline {{ color: #B0560A; font-weight: 600 }}
-.note {{ font-size: 8.5px; color: {MUTED}; margin: 3px 0 6px }}
+.note {{ font-size: 10.9px; color: {MUTED}; margin: 3px 0 6px }}
 .two {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px }}
 ul {{ margin: 2px 0 6px; padding-left: 14px }} li {{ margin: 0 0 3px }}
-.chg {{ border-bottom: 1px solid {RULE}; padding: 3px 0; font-size: 9.5px }}
+.chg {{ border-bottom: 1px solid {RULE}; padding: 3px 0; font-size: 12.2px }}
 .summary li {{ margin-bottom: 4px }}
-.ct {{ display: inline-block; width: 42px; font-size: 7.5px; font-weight: 600; letter-spacing: .08em }}
+.ct {{ display: inline-block; width: 42px; font-size: 9.6px; font-weight: 600; letter-spacing: .08em }}
 .figure {{ margin: 6px 0 10px }} .figure img {{ width: 100%; height: auto }}
 .pgrid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px }}
 .pcard {{ border-bottom: 1px solid {RULE}; padding-bottom: 6px; break-inside: avoid }}
 .ph {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px }}
-.pn {{ font-weight: 600; font-size: 10px }} .pc {{ font-size: 8.5px; color: {MUTED} }}
-.bars {{ margin-top: 4px }} .brow {{ display: grid; grid-template-columns: 36% 1fr 20%; gap: 8px; align-items: center; margin: 5px 0; font-size: 9.5px }}
+.pn {{ font-weight: 600; font-size: 12.8px }} .pc {{ font-size: 10.9px; color: {MUTED} }}
+.bars {{ margin-top: 4px }} .brow {{ display: grid; grid-template-columns: 36% 1fr 20%; gap: 8px; align-items: center; margin: 5px 0; font-size: 12.2px }}
 .bb {{ height: 9px; background: {TRACK}; border-radius: 4px; overflow: hidden }} .bb div {{ height: 9px }}
 .bv {{ text-align: right; color: {MUTED} }}
 .appx {{ break-inside: avoid; margin-bottom: 7px; border-bottom: 1px solid {RULE}; padding-bottom: 4px }}
-.ah {{ margin-bottom: 2px }} .sym {{ color: {MUTED}; font-size: 8.5px; margin-left: 4px }}
-.appx ul {{ font-size: 8.5px }}
-.disc {{ font-size: 8.5px; color: {MUTED}; margin-top: 12px }}
+.ah {{ margin-bottom: 2px }} .sym {{ color: {MUTED}; font-size: 10.9px; margin-left: 4px }}
+.appx ul {{ font-size: 10.9px }}
+.disc {{ font-size: 10.9px; color: {MUTED}; margin-top: 12px }}
 </style></head><body>{body}</body></html>"""

@@ -31,7 +31,7 @@ def votes_svg(rows: list[dict]) -> str:
     data = [r for r in rows if r.get("score")]
     if len(data) < 2:
         return ""
-    W, H, L, RR, T, B = 700, 280, 40, 14, 24, 62
+    W, H, L, RR, T, B = 700, 180, 40, 14, 24, 56
     n = len(data)
     slot = (W - L - RR) / n
     top = 3.5
@@ -42,10 +42,10 @@ def votes_svg(rows: list[dict]) -> str:
     out = []
     for v in (0, 1, 2, 3):
         out.append(f'<line x1="{L}" x2="{W - RR}" y1="{y(v):.1f}" y2="{y(v):.1f}" stroke="{TRACK}"/>')
-        out.append(f'<text x="{L - 6}" y="{y(v) + 4:.1f}" text-anchor="end" font-size="12" fill="{MUTED}">{v}</text>')
+        out.append(f'<text x="{L - 6}" y="{y(v) + 4:.1f}" text-anchor="end" font-size="15.0" fill="{MUTED}">{v}</text>')
     out.append(f'<line x1="{L}" x2="{W - RR}" y1="{y(1.5):.1f}" y2="{y(1.5):.1f}" stroke="{MUTED}" '
                f'stroke-dasharray="5 4"/>')
-    out.append(f'<text x="{W - RR}" y="{y(1.5) - 4:.1f}" text-anchor="end" font-size="11" fill="{MUTED}">'
+    out.append(f'<text x="{W - RR}" y="{y(1.5) - 4:.1f}" text-anchor="end" font-size="13.8" fill="{MUTED}">'
                f'{_esc(_("positive above"))}</text>')
     for k, r in enumerate(data):
         pos, neg = r["score"]
@@ -54,10 +54,10 @@ def votes_svg(rows: list[dict]) -> str:
         col = GREEN if pos > neg else RED
         out.append(f'<rect x="{x:.1f}" y="{y(pos):.1f}" width="{w:.1f}" height="{y(0) - y(pos):.1f}" '
                    f'fill="{col}" rx="2"/>')
-        out.append(f'<text x="{x + w / 2:.1f}" y="{y(pos) - 5:.1f}" text-anchor="middle" font-size="11" '
+        out.append(f'<text x="{x + w / 2:.1f}" y="{y(pos) - 5:.1f}" text-anchor="middle" font-size="13.8" '
                    f'fill="{INK}">{pos}:{neg}</text>')
         d = R.d(r["date"]).strftime("%d.%m.")
-        out.append(f'<text x="{x + w / 2:.1f}" y="{H - B + 6}" text-anchor="end" font-size="11" fill="{MUTED}" '
+        out.append(f'<text x="{x + w / 2:.1f}" y="{H - B + 6}" text-anchor="end" font-size="13.8" fill="{MUTED}" '
                    f'transform="rotate(-90 {x + w / 2:.1f} {H - B + 6})">{d}</text>')
     return _svg(W, H, "".join(out), _("Gesamtsystem per issue"))
 
@@ -71,7 +71,7 @@ def zins_svg(rows: list[tuple]) -> str:
     lo, hi = min(values) - 0.05, max(values) + 0.12
     dates = sorted({d for d, _v in pub + comp})
     t0, t1 = dates[0], dates[-1]
-    W, H, L, RR, T, B = 700, 280, 46, 130, 16, 40
+    W, H, L, RR, T, B = 700, 210, 46, 130, 16, 38
     span_days = max((t1 - t0).days, 1)
 
     def x(d) -> float:
@@ -85,15 +85,15 @@ def zins_svg(rows: list[tuple]) -> str:
     v = math.floor(lo / step) * step
     while v <= hi:
         out.append(f'<line x1="{L}" x2="{W - RR}" y1="{y(v):.1f}" y2="{y(v):.1f}" stroke="{TRACK}"/>')
-        out.append(f'<text x="{L - 6}" y="{y(v) + 4:.1f}" text-anchor="end" font-size="11" fill="{MUTED}">'
+        out.append(f'<text x="{L - 6}" y="{y(v) + 4:.1f}" text-anchor="end" font-size="13.8" fill="{MUTED}">'
                    f'{num(v, 1)}</text>')
         v += step
     out.append(f'<line x1="{L}" x2="{W - RR}" y1="{y(0):.1f}" y2="{y(0):.1f}" stroke="{RED}" stroke-width="1.2"/>')
-    out.append(f'<text x="{W - RR}" y="{y(0) + 14:.1f}" text-anchor="end" font-size="11" fill="{RED}">'
+    out.append(f'<text x="{W - RR}" y="{y(0) + 14:.1f}" text-anchor="end" font-size="13.8" fill="{RED}">'
                f'{_esc(_("warning below 0"))}</text>')
     for k in (0, len(dates) // 2, len(dates) - 1):
         d = dates[k]
-        out.append(f'<text x="{x(d):.1f}" y="{H - B + 18}" text-anchor="middle" font-size="11" fill="{MUTED}">'
+        out.append(f'<text x="{x(d):.1f}" y="{H - B + 18}" text-anchor="middle" font-size="13.8" fill="{MUTED}">'
                    f'{d.strftime("%b %y")}</text>')
     for series, col, label in ((pub, NAVY, _("newsletter")), (comp, ORANGE, _("computed"))):
         if len(series) < 2:
@@ -103,7 +103,7 @@ def zins_svg(rows: list[tuple]) -> str:
                    f'stroke-linejoin="round" stroke-linecap="round"/>')
         last_d, last_v = series[-1]
         out.append(f'<circle cx="{x(last_d):.1f}" cy="{y(last_v):.1f}" r="4" fill="{col}"/>')
-        out.append(f'<text x="{x(last_d) + 8:.1f}" y="{y(last_v) + 4:.1f}" font-size="12" font-weight="600" '
+        out.append(f'<text x="{x(last_d) + 8:.1f}" y="{y(last_v) + 4:.1f}" font-size="15.0" font-weight="600" '
                    f'fill="{col}">{_esc(label)} {num(last_v, 2)}</text>')
     return _svg(W, H, "".join(out), _("Zinsstruktur: printed in the newsletter vs. computed"))
 
@@ -128,24 +128,24 @@ def scatter_svg(universe: list[dict], highlights: dict[str, list[dict]], top_n: 
     for dec in (0.1, 1, 10, 100):
         if ymin <= dec <= ymax:
             out.append(f'<line x1="{L}" x2="{W - RR}" y1="{Y(dec):.1f}" y2="{Y(dec):.1f}" stroke="{TRACK}"/>')
-            out.append(f'<text x="{L - 8}" y="{Y(dec) + 4:.1f}" text-anchor="end" font-size="11" fill="{MUTED}">'
+            out.append(f'<text x="{L - 8}" y="{Y(dec) + 4:.1f}" text-anchor="end" font-size="13.8" fill="{MUTED}">'
                        f'{num(dec, 1)}</text>')
     for xv in (100, 200, 300, 400):
         if xmin <= xv <= xmax:
             out.append(f'<line x1="{X(xv):.1f}" x2="{X(xv):.1f}" y1="{T}" y2="{H - B}" stroke="{TRACK}"/>')
-            out.append(f'<text x="{X(xv):.1f}" y="{H - B + 16}" text-anchor="middle" font-size="11" '
+            out.append(f'<text x="{X(xv):.1f}" y="{H - B + 16}" text-anchor="middle" font-size="13.8" '
                        f'fill="{MUTED}">{xv}</text>')
     ranked = sorted((u["rs"] for u in universe if u.get("rs")), reverse=True)
     if len(ranked) >= top_n:
         cut = ranked[top_n - 1]
         out.append(f'<line x1="{X(cut):.1f}" x2="{X(cut):.1f}" y1="{T}" y2="{H - B}" stroke="{MUTED}" '
                    f'stroke-dasharray="5 4"/>')
-        out.append(f'<text x="{X(cut) + 4:.1f}" y="{T + 12}" font-size="11" fill="{MUTED}">'
+        out.append(f'<text x="{X(cut) + 4:.1f}" y="{T + 12}" font-size="13.8" fill="{MUTED}">'
                    f'{_esc(_("top {n} by RS").format(n=top_n))}</text>')
     if ymin <= kuv_max <= ymax:
         out.append(f'<line x1="{L}" x2="{W - RR}" y1="{Y(kuv_max):.1f}" y2="{Y(kuv_max):.1f}" stroke="{MUTED}" '
                    f'stroke-dasharray="5 4"/>')
-        out.append(f'<text x="{W - RR}" y="{Y(kuv_max) - 5:.1f}" text-anchor="end" font-size="11" fill="{MUTED}">'
+        out.append(f'<text x="{W - RR}" y="{Y(kuv_max) - 5:.1f}" text-anchor="end" font-size="13.8" fill="{MUTED}">'
                    f'KUV {num(kuv_max, 0)}</text>')
     for u in pts:
         if xmin <= u["rs"] <= xmax:
@@ -163,16 +163,16 @@ def scatter_svg(universe: list[dict], highlights: dict[str, list[dict]], top_n: 
             labels.append(i)
     for i in sorted(labels, key=lambda i: -i["rs"])[:16]:
         text = i["name"] if len(i["name"]) <= 20 else i["name"][:19] + "…"
-        out.append(f'<text x="{X(i["rs"]) + 7:.1f}" y="{Y(i["kuv"]) + 4:.1f}" font-size="11" fill="{INK}">'
+        out.append(f'<text x="{X(i["rs"]) + 7:.1f}" y="{Y(i["kuv"]) + 4:.1f}" font-size="13.8" fill="{INK}">'
                    f'{_esc(text)}</text>')
     lx, ly = W - RR - 200, T + 6
     out.append(f'<rect x="{lx - 8}" y="{ly - 4}" width="206" height="{18 * len(legend) + 8}" fill="{PAPER}" '
                f'stroke="{TRACK}"/>')
     for k, (label, col) in enumerate(legend):
         out.append(f'<circle cx="{lx}" cy="{ly + 14 + 18 * k - 4}" r="4" fill="{col}"/>')
-        out.append(f'<text x="{lx + 10}" y="{ly + 14 + 18 * k}" font-size="11" fill="{INK}">{_esc(label)}</text>')
-    out.append(f'<text x="{(L + W - RR) / 2}" y="{H - 10}" text-anchor="middle" font-size="11" fill="{MUTED}">'
+        out.append(f'<text x="{lx + 10}" y="{ly + 14 + 18 * k}" font-size="13.8" fill="{INK}">{_esc(label)}</text>')
+    out.append(f'<text x="{(L + W - RR) / 2}" y="{H - 10}" text-anchor="middle" font-size="13.8" fill="{MUTED}">'
                f'{_esc(_("relative strength (price ÷ 15-month median × 100)"))}</text>')
-    out.append(f'<text x="14" y="{(T + H - B) / 2}" text-anchor="middle" font-size="11" fill="{MUTED}" '
+    out.append(f'<text x="14" y="{(T + H - B) / 2}" text-anchor="middle" font-size="13.8" fill="{MUTED}" '
                f'transform="rotate(-90 14 {(T + H - B) / 2})">{_esc(_("KUV (price / sales, log)"))}</text>')
     return _svg(W, H, "".join(out), _("Stock list: relative strength vs. KUV"))

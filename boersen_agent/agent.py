@@ -274,6 +274,40 @@ class Agent:
 
     CHARTED_ACTIONS = ("SELL", "REDUCE", "REVIEW", "BUY")
 
+    def _idea_series(self, ctx, analysis) -> list[dict]:
+        """The new ideas of the AI analysis, with their weekly closes where a market symbol exists."""
+        if not analysis:
+            return []
+        calls = analysis.calls_by_key()
+        strategy = self.ctx_strategy(ctx)
+        out = []
+        for s in ctx.suggestions:
+            call = (analysis.data.get("new_ideas") and next(
+                (c for c in analysis.data["new_ideas"] if c["key"] == s.key), None))
+            if not call:
+                continue
+            closes, stops = [], []
+            if s.symbol:
+                try:
+                    full = [c for _d, c in R.weekly(self.market.daily_with_quote(s.symbol), self.now)[0]]
+                    closes, stops = brief._series(full, self.cfg.rule("nine_month_weeks"))
+                except Exception as e:  # noqa: BLE001 - a missing chart must not stop the report
+                    self.notes.append(f"no price chart for {s.name}: {e}")
+            uni = s.universe or {}
+            live = s.live or {}
+            out.append({"name": nice_name(s.name), "action": call["action"], "closes": closes, "stops": stops,
+                        "today": live.get("price"), "caption": "", "key": s.key, "isin": s.isin,
+                        "rule_action": s.action, "rule_confidence": s.confidence,
+                        "rs": uni.get("rs"), "kuv": uni.get("kuv"), "kbv": uni.get("kbv"),
+                        "newsletter_rec": s.newsletter_rec, "in_fund": False,
+                        "stock_share": strategy.get("stocks"), "stock_target": strategy.get("stocks_target")})
+        return out
+
+    def ctx_strategy(self, ctx) -> dict:
+        """Actual stock share and the target, for the strategy fit in the buy sections."""
+        actual = (ctx.portfolio.get("strategy") or {}).get("actual_pct") or {}
+        return {"stocks": actual.get("stocks"), "stocks_target": self.cfg.strategy_targets.get("stocks")}
+
     def _stock_series(self, ctx, analysis) -> list[dict]:
         """Weekly closes and rolling stop for every stock labelled SELL, REDUCE, REVIEW or BUY (AI call or rule)."""
         calls = analysis.calls_by_key() if analysis else {}
@@ -301,8 +335,14 @@ class Agent:
             price, stop = live.get("price"), live.get("stop")
             caption = (f"{_('Price')} {num(price, 2)} · {_('stop')} {num(stop, 2)}"
                        if price is not None and stop is not None else "")
+            uni = s.universe or {}
+            strategy = self.ctx_strategy(ctx)
             out.append({"name": nice_name(s.name), "action": code, "closes": closes, "stops": stops,
-                        "today": price, "caption": caption})
+                        "today": price, "caption": caption, "key": s.key, "isin": s.isin,
+                        "rule_action": s.action, "rule_confidence": s.confidence,
+                        "rs": uni.get("rs"), "kuv": uni.get("kuv"), "kbv": uni.get("kbv"),
+                        "newsletter_rec": s.newsletter_rec, "in_fund": s.newsletter_rec in ("K", "H"),
+                        "stock_share": strategy.get("stocks"), "stock_target": strategy.get("stocks_target")})
         return out
 
     def _stock_charts(self, ctx, name: str, analysis) -> list[Path]:
@@ -376,6 +416,7 @@ class Agent:
         analysis, err = precomputed or self._analyse(ctx, "issue", changes, pdf or self._issue_pdf_path(key))
         figs = self._charts(ctx, key, True)
         figs["stock_series"] = self._stock_series(ctx, analysis)
+        figs["idea_series"] = self._idea_series(ctx, analysis)
         ctx.notes = list(dict.fromkeys(ctx.notes + self.notes))
         self.store.save_suggestions(self.today.isoformat(), "issue:" + key, [s.as_dict() for s in ctx.suggestions])
         self.cfg.reports_dir.mkdir(parents=True, exist_ok=True)

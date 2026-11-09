@@ -106,6 +106,22 @@ DE = {
     "no newsletter yet": "noch kein Newsletter",
     "Markets today": "Märkte heute",
     "Newsletter summary": "Zusammenfassung des Newsletters",
+    "Purchase recommendations in detail": "Kaufempfehlungen im Detail",
+    "Profile": "Profil",
+    "New ideas in detail": "Neue Ideen im Detail",
+    "No price chart: no market symbol": "Kein Kursverlauf: kein Marktsymbol",
+    "No profile yet": "Noch kein Profil",
+    "Fit in the investment strategy": "Einordnung in die Anlagestrategie",
+    "Stock share today {a} % against a target of {t} %": "Aktienanteil heute {a} % gegenüber einem Ziel von {t} %",
+    "A purchase would raise the stock share further above target; the strategy argues against more stocks while it is above target.":
+        "Ein Kauf würde den Aktienanteil weiter über das Ziel heben; die Strategie spricht gegen weitere Aktien, solange der Anteil über dem Ziel liegt.",
+    "There is room in the stock target; a purchase fits the target allocation.":
+        "Im Aktienziel ist Platz; ein Kauf passt zur Zielquote.",
+    "Included in the BS Best fund (estimated from the Dispo-Liste)":
+        "Im Fonds BS Best enthalten (aus der Dispo-Liste geschätzt)",
+    "Not part of the BS Best fund (no Dispo recommendation)":
+        "Nicht im Fonds BS Best (keine Dispo-Empfehlung)",
+    "Rules: {rule} ({rc}); AI call: {ai}": "Regeln: {rule} ({rc}); KI-Urteil: {ai}",
     "Market news: what to watch": "Marktnachrichten: was zu beobachten ist",
     "Market regime": "Marktlage",
     "Market regime, re-checked with live data": "Marktlage, mit aktuellen Daten nachgeprüft",

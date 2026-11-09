@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from . import brief, charts, mailer, pdfreport, report, weekly
+from . import attachments, brief, charts, mailer, pdfreport, pricechart, report, weekly
 from . import rules as R
 from .i18n import _, num
 from .names import nice_name
@@ -273,8 +273,6 @@ class Agent:
                self.cfg.rule("kuv_normal_max"))
         return {k: v for k, v in out.items() if v}
 
-    CHARTED_ACTIONS = ("SELL", "REDUCE", "REVIEW", "BUY")
-
     def _idea_series(self, ctx, analysis) -> list[dict]:
         """The new ideas of the AI analysis, with their weekly closes where a market symbol exists."""
         if not analysis:
@@ -287,17 +285,19 @@ class Agent:
                 (c for c in analysis.data["new_ideas"] if c["key"] == s.key), None))
             if not call:
                 continue
-            closes, stops = [], []
+            closes, stops, dates, avg = [], [], None, None
             if s.symbol:
                 try:
-                    full = [c for _d, c in R.weekly(self.market.daily_with_quote(s.symbol), self.now)[0]]
-                    closes, stops = brief._series(full, self.cfg.rule("nine_month_weeks"))
+                    done = R.weekly(self.market.daily_with_quote(s.symbol), self.now)[0]
+                    closes, stops = brief._series([c for _d, c in done], self.cfg.rule("nine_month_weeks"))
+                    dates = brief._chart_dates([d for d, _c in done], len(closes)) if closes else None
+                    avg = pricechart.window_averages([c for _d, c in done], brief.CHART_WEEKS) if closes else None
                 except Exception as e:  # noqa: BLE001 - a missing chart must not stop the report
                     self.notes.append(f"no price chart for {s.name}: {e}")
             uni = s.universe or {}
             live = s.live or {}
             out.append({"name": nice_name(s.name), "action": call["action"], "closes": closes, "stops": stops,
-                        "today": live.get("price"), "caption": "", "key": s.key, "isin": s.isin,
+                        "dates": dates, "averages": avg, "today": live.get("price"), "caption": "", "key": s.key, "isin": s.isin,
                         "rule_action": s.action, "rule_confidence": s.confidence,
                         "rs": uni.get("rs"), "kuv": uni.get("kuv"), "kbv": uni.get("kbv"),
                         "newsletter_rec": s.newsletter_rec, "in_fund": False,
@@ -325,13 +325,14 @@ class Agent:
                 self.notes.append(f"no price chart for {s.name}: no market symbol")
                 continue
             try:
-                full = [c for _d, c in R.weekly(self.market.daily_with_quote(s.symbol), self.now)[0]]
+                done = R.weekly(self.market.daily_with_quote(s.symbol), self.now)[0]
             except Exception as e:  # noqa: BLE001 - one bad symbol must not stop the report
                 self.notes.append(f"no price chart for {s.name}: {e}")
                 continue
-            closes, stops = brief._series(full, self.cfg.rule("nine_month_weeks"))
+            closes, stops = brief._series([c for _d, c in done], self.cfg.rule("nine_month_weeks"))
             if not closes:
                 continue
+            dates = brief._chart_dates([d for d, _c in done], len(closes))
             live = s.live or {}
             price, stop = live.get("price"), live.get("stop")
             caption = (f"{_('Price')} {num(price, 2)} · {_('stop')} {num(stop, 2)}"
@@ -339,6 +340,7 @@ class Agent:
             uni = s.universe or {}
             strategy = self.ctx_strategy(ctx)
             out.append({"name": nice_name(s.name), "action": code, "closes": closes, "stops": stops,
+                        "dates": dates, "averages": pricechart.window_averages([c for _d, c in done], brief.CHART_WEEKS),
                         "today": price, "caption": caption, "key": s.key, "isin": s.isin,
                         "rule_action": s.action, "rule_confidence": s.confidence,
                         "rs": uni.get("rs"), "kuv": uni.get("kuv"), "kbv": uni.get("kbv"),
@@ -395,6 +397,19 @@ class Agent:
             except Exception as e:  # noqa: BLE001
                 self.notes.append(f"e-mail failed: {e}")
 
+    def _conclusion(self, key: str) -> dict | None:
+        """The closing commentary of the issue's newsletter page, shown at the bottom of page 1."""
+        src = self._issue_pdf_path(key)
+        if not (self.cfg.conclusion_page and src):
+            return None
+        try:
+            block = attachments.conclusion_block(src, self.cfg.conclusion_page)
+        except Exception as e:  # noqa: BLE001 - the report is still complete without it
+            self.notes.append(f"newsletter conclusion not shown: {e}")
+            return None
+        block["issue"] = key
+        return block
+
     def _issue_pdf_path(self, issue_key: str) -> Path | None:
         r = self.store.db.execute("SELECT doc_id FROM issues WHERE issue_key=?", (issue_key,)).fetchone()
         folder = self.cfg.data_dir / "newsletters"
@@ -429,6 +444,7 @@ class Agent:
         if self.cfg.keep_markdown:
             (self.cfg.reports_dir / f"{key}_newsletter-report.md").write_text(
                 report.biweekly(ctx, prev_issue, prev_rows, self.cfg, self.now, analysis, err), encoding="utf-8")
+        figs["conclusion"] = self._conclusion(key)
         out = weekly.render_issue(ctx, analysis, err, self.now, changes, figs, ctx.notes, pdfreport.DISCLAIMER,
                                   self.cfg.reports_dir / f"{key}_newsletter-report.pdf")
         self._publish(out, f"Börsen-Agent Bericht Ausgabe {key}")
@@ -448,18 +464,30 @@ class Agent:
                 report.daily(ctx, self.cfg, self.now, analysis, err), encoding="utf-8")
         items = report.daily_action_items(ctx, analysis)
 
+        weekly_done: dict[str, list | None] = {}
+
+        def weekly_for(symbol: str):
+            if symbol not in weekly_done:
+                try:
+                    weekly_done[symbol] = R.weekly(self.market.daily_with_quote(symbol), self.now)[0]
+                except Exception as e:  # noqa: BLE001 - a missing history must not stop the brief
+                    self.notes.append(f"no price history for {symbol}: {e}")
+                    weekly_done[symbol] = None
+            return weekly_done[symbol]
+
         def closes_for(symbol: str) -> list[float] | None:
-            try:
-                done = R.weekly(self.market.daily_with_quote(symbol), self.now)[0]
-            except Exception as e:  # noqa: BLE001 - a missing history must not stop the brief
-                self.notes.append(f"no price history for {symbol}: {e}")
-                return None
-            return [c for _d, c in done]
+            done = weekly_for(symbol)
+            return [c for _d, c in done] if done else None
+
+        def dates_for(symbol: str) -> list[str] | None:
+            done = weekly_for(symbol)
+            return [d for d, _c in done] if done else None
 
         data = brief.daily_data(ctx, analysis, self.now, items[:brief.MAX_ACTIONS], closes_for,
                                 self.cfg.strategy_targets, len(items), self.cfg.rule("nine_month_weeks"),
                                 self.cfg.report_language,
-                                market=brief.market_quotes(self.market.quote, self.now, self.cfg.market_items))
+                                market=brief.market_quotes(self.market.quote, self.now, self.cfg.market_items),
+                                dates_for=dates_for)
         out = self.cfg.reports_dir / f"{day}_daily-brief.pdf"
         brief.render_pdf(data, out.with_suffix(".html"), out)
         self._publish(out, f"Börsen-Agent Tagesbrief {day}")

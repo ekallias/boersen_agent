@@ -199,8 +199,9 @@ def valuation(hold: list[Holding], market, cfg, resolve, fund_allocations: dict 
     fund_allocations = fund_allocations or {}
     high_risk_isins = {str(i).upper() for i in getattr(cfg, "high_risk_isins", [])}
     targets = getattr(cfg, "strategy_targets", {"high_risk": 10.0, "stocks": 40.0, "safe": 50.0})
+    w_div = float(getattr(cfg, "diversified_weight", 0.5))
     rows, total, equity = [], 0.0, 0.0
-    exposure = {"high_risk": 0.0, "stocks": 0.0, "safe": 0.0, "unclassified": 0.0}
+    exposure = {"high_risk": 0.0, "stocks": 0.0, "diversified": 0.0, "safe": 0.0, "unclassified": 0.0}
     missing, at_cost = [], []
     for h in hold:
         if h.is_cash:
@@ -226,7 +227,7 @@ def valuation(hold: list[Holding], market, cfg, resolve, fund_allocations: dict 
             missing.append(h.name)
         else:
             total += eur
-            row_exposure = {"high_risk": 0.0, "stocks": 0.0, "safe": 0.0, "unclassified": 0.0}
+            row_exposure = {"high_risk": 0.0, "stocks": 0.0, "diversified": 0.0, "safe": 0.0, "unclassified": 0.0}
             if h.isin and h.isin.upper() in high_risk_isins:
                 row_exposure["high_risk"] = eur
             elif h.asset == "stock":
@@ -236,7 +237,7 @@ def valuation(hold: list[Holding], market, cfg, resolve, fund_allocations: dict 
             elif h.asset == "fund":
                 allocation = fund_allocations.get(h.key)
                 if allocation:
-                    row_exposure["stocks"] = eur * allocation.get("stock", 0.0)
+                    row_exposure["diversified"] = eur * allocation.get("stock", 0.0)
                     row_exposure["safe"] = eur * (allocation.get("bond", 0.0) + allocation.get("cash", 0.0))
                     row_exposure["unclassified"] = eur * allocation.get("other", 0.0)
                 else:
@@ -245,7 +246,7 @@ def valuation(hold: list[Holding], market, cfg, resolve, fund_allocations: dict 
                 row_exposure["unclassified"] = eur
             for bucket, value in row_exposure.items():
                 exposure[bucket] += value
-            equity += row_exposure["high_risk"] + row_exposure["stocks"]
+            equity += row_exposure["high_risk"] + row_exposure["stocks"] + row_exposure["diversified"]
         fx_cost = fx_to_eur(market, cfg, h.currency)
         cost_eur = h.avg_price * h.quantity * unit / fx_cost if fx_cost else None
         rows.append({"key": h.key, "name": h.name, "cash": False, "asset": h.asset, "symbol": sym,
@@ -255,10 +256,17 @@ def valuation(hold: list[Holding], market, cfg, resolve, fund_allocations: dict 
     unknown_allocation = [r["name"] for r in rows if r.get("asset") == "fund" and r.get("exposure_eur")
                           and r["exposure_eur"]["unclassified"] == r["value_eur"]
                           and r["key"] not in fund_allocations]
-    actual_pct = {key: value / total * 100 if total else None
-                  for key, value in exposure.items() if key != "unclassified"}
+    def pct(value):
+        return value / total * 100 if total else None
+    # Funds' stock share counts at w_div in the stock quota; the raw figures are kept alongside it.
+    actual_pct = {"high_risk": pct(exposure["high_risk"]),
+                  "stocks": pct(exposure["stocks"] + w_div * exposure["diversified"]),
+                  "safe": pct(exposure["safe"]),
+                  "stocks_direct": pct(exposure["stocks"]),
+                  "diversified": pct(exposure["diversified"])}
     strategy = {
         "targets_pct": dict(targets),
+        "diversified_weight": w_div,
         "actual_pct": actual_pct,
         "drift_pct": {key: actual_pct[key] - target for key, target in targets.items()
                       if actual_pct.get(key) is not None},

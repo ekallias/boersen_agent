@@ -86,8 +86,10 @@ class Config:
     report_language: str = "en"             # en | de: language of reports, charts and the AI's text
     strategy_targets: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_STRATEGY_TARGETS))
     high_risk_isins: list[str] = field(default_factory=list)
+    diversified_weight: float = 0.5         # share of funds' stock exposure counted in the stock quota
     fund_allocations: dict[str, dict[str, float]] = field(default_factory=dict)  # ISIN -> stock/bond/cash/other shares
     market_items: list[dict] = field(default_factory=lambda: [dict(i) for i in DEFAULT_MARKET_ITEMS])
+    conclusion_page: int | None = 5         # newsletter page whose closing commentary is attached to issue reports (None: off)
     email_enabled: bool = False
     email_to: list[str] = field(default_factory=list)
     email_from: str | None = None
@@ -170,11 +172,14 @@ def load(path: str | Path | None) -> Config:
     token_env = mk.get("token_env", "EODHD_API_TOKEN")
     ai = raw.get("ai", {})
     strategy = raw.get("strategy", {})
-    unknown_strategy = set(strategy) - {"targets", "high_risk_isins"}
+    unknown_strategy = set(strategy) - {"targets", "high_risk_isins", "diversified_weight"}
     if unknown_strategy:
         raise ValueError(f"unknown strategy keys: {sorted(unknown_strategy)}")
     if not isinstance(strategy.get("targets", {}), dict):
         raise ValueError("strategy.targets must be a table of allocation percentages")
+    diversified_weight = float(strategy.get("diversified_weight", 0.5))
+    if not 0 <= diversified_weight <= 1:
+        raise ValueError("strategy.diversified_weight must be between 0 and 1")
     high_risk_isins = strategy.get("high_risk_isins", [])
     if not isinstance(high_risk_isins, list):
         raise ValueError("strategy.high_risk_isins must be a list")
@@ -221,8 +226,10 @@ def load(path: str | Path | None) -> Config:
         report_language=str(raw.get("report", {}).get("language", "en")),
         strategy_targets=targets,
         high_risk_isins=[str(isin).upper() for isin in high_risk_isins],
+        diversified_weight=diversified_weight,
         fund_allocations=fund_allocations,
         market_items=market_items,
+        conclusion_page=(int(raw.get("report", {}).get("conclusion_page", 5)) or None),
         email_enabled=bool(em.get("enabled", False)),
         email_to=[str(x) for x in email_to],
         email_from=em.get("from") or em.get("user"),

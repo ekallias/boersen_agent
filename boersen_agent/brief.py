@@ -11,6 +11,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from . import pricechart
 from .config import DEFAULT_MARKET_ITEMS
 from .i18n import _, action, date_long, date_short, num, reason
 from .names import nice_name
@@ -40,41 +41,10 @@ def fmt_minus(text: str) -> str:
 
 
 # --- sparkline ---------------------------------------------------------------------
-def sparkline(closes, stops, today=None, colour=NAVY, w=230, h=54, pad=5, label="") -> str:
-    """Inline SVG: weekly closes (solid), rolling stop (dashed), optional live price ring."""
-    n = len(closes)
-    ahead = 2 if today is not None else 0
-    values = list(closes) + list(stops) + ([today] if today is not None else [])
-    lo, hi = min(values), max(values)
-    span = (hi - lo) or 1.0
-
-    def x(i: float) -> float:
-        return pad + i * (w - 2 * pad) / (n - 1 + ahead)
-
-    def y(v: float) -> float:
-        return pad + (hi - v) * (h - 2 * pad) / span
-
-    def pts(vals):
-        return " ".join(f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(vals))
-
-    last_x, last_y = x(n - 1), y(closes[-1])
-    parts = [
-        f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(label)}" '
-        f'style="display: block; overflow: visible">',
-        f'<polyline points="{pts(stops)}" fill="none" stroke="{STOP_GREY}" stroke-width="1.3" '
-        f'stroke-dasharray="3 3" stroke-linejoin="round"/>',
-        f'<polyline points="{pts(closes)}" fill="none" stroke="{NAVY}" stroke-width="1.8" '
-        f'stroke-linejoin="round" stroke-linecap="round"/>',
-    ]
-    if today is not None:
-        tx, ty = x(n - 1 + ahead), y(today)
-        parts.append(f'<line x1="{last_x:.1f}" y1="{last_y:.1f}" x2="{tx:.1f}" y2="{ty:.1f}" '
-                     f'stroke="{colour}" stroke-width="1.3" stroke-dasharray="2 2"/>')
-        parts.append(f'<circle cx="{tx:.1f}" cy="{ty:.1f}" r="3.4" fill="{PAPER}" stroke="{colour}" '
-                     f'stroke-width="1.8"/>')
-    parts.append(f'<circle cx="{last_x:.1f}" cy="{last_y:.1f}" r="3" fill="{colour}"/>')
-    parts.append("</svg>")
-    return "".join(parts)
+def sparkline(closes, stops, today=None, colour=NAVY, w=230, h=54, pad=5, label="", dates=None, averages=None):
+    """Inline SVG price chart (see pricechart.price_svg): scale, high and low lines, optional averages."""
+    return pricechart.price_svg(closes, stops, dates=dates, today=today, colour=colour, w=w, h=h, label=label,
+                                averages=averages)
 
 
 # --- building blocks ---------------------------------------------------------------
@@ -136,7 +106,7 @@ def action_row(a: dict, labels: dict) -> str:
     width = max(2.0, min(pct / 40 * 100, 100))
     if a.get("closes"):
         label = f'{labels["weekly_closes"]} {a["name"]}, {a["closes"][-1]:g}, stop {a["stops"][-1]:g}'
-        spark = sparkline(a["closes"], a["stops"], a.get("today"), colour=fill, label=label)
+        spark = sparkline(a["closes"], a["stops"], a.get("today"), colour=fill, label=label, dates=a.get("dates"))
     else:
         spark = f'<div style="font-size: 12px; color: {MUTED}">{esc(labels["no_history"])}</div>'
     return (
@@ -320,6 +290,12 @@ def _series(closes_full: list[float], stop_weeks: int) -> tuple[list[float], lis
     return closes_full[start:], stops
 
 
+def _chart_dates(dates_full: list[str], n_closes: int) -> list[str] | None:
+    """The dates matching the closes that `_series` returns, or None if they do not line up."""
+    dates = [str(d) for d in dates_full[max(0, len(dates_full) - CHART_WEEKS):]]
+    return dates if len(dates) == n_closes else None
+
+
 def _chips(ms) -> list[dict]:
     chips = []
     for key in ("zinsstruktur", "index_trend", "anleihezinsen", "oel", "crb", "dollar", "saison", "short_term"):
@@ -367,11 +343,12 @@ def market_quotes(quote, now, market_items: list[dict] | None = None) -> dict | 
 
 
 def daily_data(ctx, analysis, now, items, closes_for, targets: dict, shown_total: int, stop_weeks: int,
-               language: str = "en", market: dict | None = None) -> dict:
+               language: str = "en", market: dict | None = None, dates_for=None) -> dict:
     """Build the brief's data from the report context.
 
     items: the (suggestion, call, action) tuples to show (already limited to MAX_ACTIONS).
     closes_for(symbol) -> list of completed weekly closes (oldest first), or None.
+    dates_for(symbol) -> the dates of those closes, or None (stored with the chart inputs).
     """
     port, ms = ctx.portfolio, ctx.market
     total = port["total_eur"] if port["total_eur"] is not None else port["known_total_eur"]
@@ -394,6 +371,8 @@ def daily_data(ctx, analysis, now, items, closes_for, targets: dict, shown_total
         live = s.live or {}
         full = closes_for(s.symbol) if s.symbol else None
         closes, stops = _series(full, stop_weeks) if full else ([], [])
+        dates_full = dates_for(s.symbol) if dates_for and closes else None
+        dates = _chart_dates(dates_full, len(closes)) if dates_full else None
         price = live.get("price")
         dist = live.get("dist_to_stop_pct")
         stop = live.get("stop")
@@ -415,7 +394,7 @@ def daily_data(ctx, analysis, now, items, closes_for, targets: dict, shown_total
             "action": code, "confidence": confidence, "name": nice_name(s.name), "sub": sub,
             "text": text, "override": override, "above_stop_pct": round(dist, 1) if dist is not None else 0,
             "caption": caption, "today": price if closes else None,
-            "closes": closes, "stops": stops,
+            "closes": closes, "stops": stops, "dates": dates, "averages": pricechart.window_averages(full, CHART_WEEKS) if full else None, "key": s.key,
         })
 
     if analysis:
@@ -436,6 +415,8 @@ def daily_data(ctx, analysis, now, items, closes_for, targets: dict, shown_total
              "target": targets.get("high_risk")},
             {"label": _("Stocks"), "actual": port["strategy"]["actual_pct"].get("stocks") or 0,
              "target": targets.get("stocks")},
+            {"label": _("Diversified (funds)"), "actual": port["strategy"]["actual_pct"].get("diversified") or 0,
+             "target": None},
             {"label": _("Safe"), "actual": port["strategy"]["actual_pct"].get("safe") or 0,
              "target": targets.get("safe")},
             {"label": _("Unclassified"), "actual": port["strategy"].get("unclassified_pct") or 0, "target": None}]

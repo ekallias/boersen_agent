@@ -152,6 +152,16 @@ def price_vs_stop(panels: list[dict], path: Path, weeks: int = 39) -> Path | Non
         dates = [R.d(d) for d, _ in wk][start:]
         ax.plot(dates, closes[start:], color=SERIES[0], linewidth=1.6)
         ax.step(dates, stop[start:], where="post", color=MUTED, linewidth=1.0, linestyle=(0, (3, 2)))
+        nan = float("nan")
+        ma10 = [nan if v is None else v for v in R.sma(closes, 10)[start:]]
+        ma39 = [nan if v is None else v for v in R.sma(closes, 39)[start:]]
+        ax.plot(dates, ma10, color="#B97A00", linewidth=1.0, label="10 W avg")
+        ax.plot(dates, ma39, color="#2F7A6E", linewidth=1.0, label="39 W avg")
+        hi_w, lo_w = max(closes[start:]), min(closes[start:])
+        for v, tag in ((hi_w, "H"), (lo_w, "L")):
+            ax.axhline(v, color=MUTED, linewidth=0.7, linestyle=(0, (1, 3)))
+            ax.text(dates[0], v, f" {tag} {num(v, 2)}", color=INK2, fontsize=8, va="bottom")
+        ax.legend(loc="upper left", fontsize=7, frameon=False, ncol=2)
         if stop[-1] is not None:
             pct = (closes[-1] / stop[-1] - 1) * 100 if stop[-1] else 0.0
             ax.text(dates[-1], stop[-1], _(" stop {v}").format(v=num(stop[-1], 2)) + f"  ({pct:+.1f} %)",

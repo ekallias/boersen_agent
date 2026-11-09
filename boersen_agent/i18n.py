@@ -202,6 +202,23 @@ DE = {
         "Die Regelergebnisse stammen aus den Börsensignale-Methoden, wie die Skripte sie umsetzen; Empfehlungen "
         "und Konfidenz stammen von der KI, die diese Fakten liest. Konfidenz = Stärke der Belege, keine "
         "Gewinnwahrscheinlichkeit. Entscheidungshilfe für Ihr eigenes Depot, keine Anlageberatung.",
+    "Diversified (funds)": "Diversifiziert (Fonds)",
+    "counted at": "gezählt mit",
+    "Single stocks": "Einzelaktien",
+    "Diversified funds / ETFs (stock share)": "Diversifizierte Fonds / ETFs (Aktienanteil)",
+    "Stock quota (risk-weighted)": "Aktienquote (risikogewichtet)",
+    "Strategy allocation and diversified stocks": "Strategieaufteilung und diversifizierte Aktien",
+    "Bucket": "Bereich",
+    "Actual": "Ist",
+    "Target": "Ziel",
+    "Drift": "Abweichung",
+    "Funds’ stock share counts at {w} % in the stock quota: their diversification makes them less risky than single stocks.":
+        "Der Aktienanteil der Fonds zählt mit {w} % in die Aktienquote: ihre Streuung macht sie weniger riskant als Einzelwerte.",
+    "Fund": "Fonds",
+    "Stock share": "Aktienanteil",
+    "Counted in stock quota €": "In Aktienquote gezählt €",
+    "Newsletter conclusion": "Fazit des Newsletters",
+    "Source: Börsensignale, page {p}, issue of {d}. Quoted verbatim.": "Quelle: Börsensignale, Seite {p}, Ausgabe vom {d}. Wörtlich übernommen.",
     # charts
     "Stocks": "Aktien", "Funds / ETFs": "Fonds / ETFs", "Cash-like (cash, bonds)": "Cash-ähnlich (Cash, Anleihen)",
     " {pct}% watch line": " {pct}%-Beobachtungslinie",

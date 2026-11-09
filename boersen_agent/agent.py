@@ -221,7 +221,8 @@ class Agent:
         facts = build_facts(ctx, scope, self.now, changes, prev)
         effort = self.cfg.ai_effort_issue if scope == "issue" else self.cfg.ai_effort_daily
         try:
-            a = analyse(facts, model=self.cfg.ai_model, effort=effort, pdf=pdf, client=self.ai_client,
+            model = (self.cfg.ai_model_issue if scope == "issue" else self.cfg.ai_model_daily) or self.cfg.ai_model
+            a = analyse(facts, model=model, effort=effort, pdf=pdf, client=self.ai_client,
                         max_tokens=self.cfg.ai_max_tokens, base_url=self.cfg.ai_base_url,
                         server_fallbacks=self.cfg.ai_server_fallbacks)
         except AnalystError as e:
